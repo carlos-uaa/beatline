@@ -6,8 +6,10 @@ export default function Timeline({
   selectedIndex, 
   onSelectSlot, 
   isRevealed, 
+  isRoundCorrect = false,
   correctSlotIndex,
-  eliminatedSlots = [] // Índices de ranuras descartadas por Pista 2
+  eliminatedSlots = [], // Índices de ranuras descartadas por Pista 2
+  highlightTrackId = null // ID de la carta ganada este turno para resaltarla
 }) {
   return (
     <div className="w-full py-2 overflow-x-auto select-none">
@@ -17,73 +19,86 @@ export default function Timeline({
         <SlotButton
           index={0}
           isSelected={selectedIndex === 0}
-          isCorrect={isRevealed && correctSlotIndex === 0}
-          isWrong={isRevealed && selectedIndex === 0 && correctSlotIndex !== 0}
+          isCorrect={isRevealed && !isRoundCorrect && correctSlotIndex === 0}
+          isWrong={isRevealed && !isRoundCorrect && selectedIndex === 0}
           isEliminated={eliminatedSlots.includes(0)}
           disabled={isRevealed || eliminatedSlots.includes(0)}
           onClick={() => onSelectSlot(0)}
           label="Antes de todo"
         />
 
-        {cards.map((card, idx) => (
-          <React.Fragment key={card.id || `${card.title}-${idx}`}>
-            {/* Carta del jugador en su línea de tiempo */}
-            <div 
-              className="relative w-32 h-44 sm:w-40 sm:h-52 rounded-2xl p-2.5 flex flex-col justify-between border shadow-lg transition-transform duration-300"
-              style={{
-                backgroundColor: 'var(--color-bg-card)',
-                borderColor: 'var(--border-subtle)',
-                boxShadow: 'var(--shadow-md)'
-              }}
-            >
-              {/* Encabezado con año oficial */}
-              <div className="flex items-center justify-between">
-                <span 
-                  className="px-2 py-0.5 rounded-full text-xs font-black tracking-widest text-slate-950 font-mono shadow-sm"
-                  style={{ backgroundColor: 'var(--color-accent)' }}
-                >
-                  {card.year}
-                </span>
-                <Disc className="w-3.5 h-3.5 text-slate-500" />
+        {cards.map((card, idx) => {
+          const isNewlyAdded = isRevealed && isRoundCorrect && card.id === highlightTrackId;
+          return (
+            <React.Fragment key={card.id || `${card.title}-${idx}`}>
+              {/* Carta del jugador en su línea de tiempo */}
+              <div 
+                className={`relative w-32 h-44 sm:w-40 sm:h-52 rounded-2xl p-2.5 flex flex-col justify-between border shadow-lg transition-transform duration-300 ${
+                  isNewlyAdded 
+                    ? 'ring-4 ring-emerald-500/50 border-emerald-400 scale-105 shadow-emerald-500/20' 
+                    : ''
+                }`}
+                style={{
+                  backgroundColor: 'var(--color-bg-card)',
+                  borderColor: isNewlyAdded ? '#34d399' : 'var(--border-subtle)',
+                  boxShadow: 'var(--shadow-md)'
+                }}
+              >
+                {/* Encabezado con año oficial y badge si es recién ganada */}
+                <div className="flex items-center justify-between">
+                  <span 
+                    className="px-2 py-0.5 rounded-full text-xs font-black tracking-widest text-slate-950 font-mono shadow-sm"
+                    style={{ backgroundColor: isNewlyAdded ? '#34d399' : 'var(--color-accent)' }}
+                  >
+                    {card.year}
+                  </span>
+                  {isNewlyAdded ? (
+                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase bg-emerald-400 text-slate-950 font-mono shadow-sm animate-pulse">
+                      ¡Ganada!
+                    </span>
+                  ) : (
+                    <Disc className="w-3.5 h-3.5 text-slate-500" />
+                  )}
+                </div>
+
+                {/* Portada */}
+                <div className="relative w-full h-20 sm:h-24 rounded-xl overflow-hidden my-1 bg-slate-900 border border-slate-800">
+                  <img
+                    src={card.artwork || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80'}
+                    alt={card.title}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+
+                {/* Título y Artista */}
+                <div className="text-left overflow-hidden">
+                  <h4 className="font-bold text-xs sm:text-sm text-white truncate" title={card.title}>
+                    {card.title}
+                  </h4>
+                  <p className="text-[11px] text-slate-400 truncate" title={card.artist}>
+                    {card.artist}
+                  </p>
+                </div>
               </div>
 
-              {/* Portada */}
-              <div className="relative w-full h-20 sm:h-24 rounded-xl overflow-hidden my-1 bg-slate-900 border border-slate-800">
-                <img
-                  src={card.artwork || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80'}
-                  alt={card.title}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-
-              {/* Título y Artista */}
-              <div className="text-left overflow-hidden">
-                <h4 className="font-bold text-xs sm:text-sm text-white truncate" title={card.title}>
-                  {card.title}
-                </h4>
-                <p className="text-[11px] text-slate-400 truncate" title={card.artist}>
-                  {card.artist}
-                </p>
-              </div>
-            </div>
-
-            {/* Ranura entre esta carta y la siguiente */}
-            <SlotButton
-              index={idx + 1}
-              isSelected={selectedIndex === idx + 1}
-              isCorrect={isRevealed && correctSlotIndex === idx + 1}
-              isWrong={isRevealed && selectedIndex === idx + 1 && correctSlotIndex !== idx + 1}
-              isEliminated={eliminatedSlots.includes(idx + 1)}
-              disabled={isRevealed || eliminatedSlots.includes(idx + 1)}
-              onClick={() => onSelectSlot(idx + 1)}
-              label={
-                idx === cards.length - 1 
-                  ? "Después de todo" 
-                  : `Entre ${card.year} y ${cards[idx + 1]?.year || '...'}`
-              }
-            />
-          </React.Fragment>
-        ))}
+              {/* Ranura entre esta carta y la siguiente */}
+              <SlotButton
+                index={idx + 1}
+                isSelected={selectedIndex === idx + 1}
+                isCorrect={isRevealed && !isRoundCorrect && correctSlotIndex === idx + 1}
+                isWrong={isRevealed && !isRoundCorrect && selectedIndex === idx + 1}
+                isEliminated={eliminatedSlots.includes(idx + 1)}
+                disabled={isRevealed || eliminatedSlots.includes(idx + 1)}
+                onClick={() => onSelectSlot(idx + 1)}
+                label={
+                  idx === cards.length - 1 
+                    ? "Después de todo" 
+                    : `Entre ${card.year} y ${cards[idx + 1]?.year || '...'}`
+                }
+              />
+            </React.Fragment>
+          );
+        })}
 
         {cards.length === 0 && (
           <div className="flex items-center justify-center p-6 rounded-2xl border-2 border-dashed border-slate-700 text-slate-400 text-xs sm:text-sm max-w-sm">

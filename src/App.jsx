@@ -102,6 +102,8 @@ export default function App() {
   const [showEventModal, setShowEventModal] = useState(false);
   const [hasStartedPlayback, setHasStartedPlayback] = useState(false);
   const [wasPassed, setWasPassed] = useState(false);
+  const [duelWinnerIndex, setDuelWinnerIndex] = useState(null);
+  const [duelRewardType, setDuelRewardType] = useState(null); // 'token' | 'card'
 
   const [showInstructions, setShowInstructions] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -163,7 +165,9 @@ export default function App() {
         winner,
         isEndlessMode,
         bonusClaimedThisTurn,
-        cardRevokedThisTurn
+        cardRevokedThisTurn,
+        duelWinnerIndex,
+        duelRewardType
       });
     }
   }, [
@@ -190,7 +194,9 @@ export default function App() {
     winner,
     isEndlessMode,
     bonusClaimedThisTurn,
-    cardRevokedThisTurn
+    cardRevokedThisTurn,
+    duelWinnerIndex,
+    duelRewardType
   ]);
 
   // Manejador del reloj de cuenta regresiva (Adrenalina - solo corre cuando dan Play)
@@ -263,6 +269,8 @@ export default function App() {
       setIsEndlessMode(saved.isEndlessMode || false);
       setBonusClaimedThisTurn(saved.bonusClaimedThisTurn || false);
       setCardRevokedThisTurn(saved.cardRevokedThisTurn || false);
+      setDuelWinnerIndex(saved.duelWinnerIndex !== undefined ? saved.duelWinnerIndex : null);
+      setDuelRewardType(saved.duelRewardType || null);
       setGameState('playing');
       setHasSavedGame(false);
     }
@@ -363,6 +371,8 @@ export default function App() {
     setHasUsedSecondChance(false);
     setSecondChanceActive(false);
     setExactYearBonusClaimed(false);
+    setDuelWinnerIndex(null);
+    setDuelRewardType(null);
 
     const tCount = nextTurnCount !== null ? nextTurnCount : turnCount + 1;
     setTurnCount(tCount);
@@ -617,41 +627,43 @@ export default function App() {
 
     setViewingPlayerIndex(null);
     const cards = currentPlayer.cards || [];
-    let valid = true;
-
-    if (selectedSlot > 0) {
-      const prevCard = cards[selectedSlot - 1];
-      if (currentTrack.year < prevCard.year) {
-        valid = false;
-      }
-    }
-
-    if (selectedSlot < cards.length) {
-      const nextCard = cards[selectedSlot];
-      if (currentTrack.year > nextCard.year) {
-        valid = false;
-      }
-    }
-
     // Tolerancia por modo de dificultad o evento especial
     // Relajada: ±2 años; Turno blindado: ±3 años
     let tolerance = 0;
     if (difficulty === 'relaxed') tolerance = Math.max(tolerance, 2);
     if (activeEvent?.marginTolerance) tolerance = Math.max(tolerance, activeEvent.marginTolerance);
 
-    if (!valid && tolerance > 0) {
-      const prevYear = selectedSlot > 0 ? cards[selectedSlot - 1].year : -9999;
-      const nextYear = selectedSlot < cards.length ? cards[selectedSlot].year : 9999;
-      const distPrev = Math.abs(currentTrack.year - prevYear);
-      const distNext = Math.abs(currentTrack.year - nextYear);
-      if (distPrev <= tolerance || distNext <= tolerance) {
-        valid = true;
+    // Calcular todos los slots válidos cronológicamente
+    const validSlots = [];
+    for (let s = 0; s <= cards.length; s++) {
+      const prevYear = s > 0 ? cards[s - 1].year : -Infinity;
+      const nextYear = s < cards.length ? cards[s].year : Infinity;
+      
+      const exactValid = currentTrack.year >= prevYear && currentTrack.year <= nextYear;
+      if (exactValid) {
+        validSlots.push(s);
+      } else if (tolerance > 0) {
+        const distPrev = s > 0 ? Math.abs(currentTrack.year - prevYear) : Infinity;
+        const distNext = s < cards.length ? Math.abs(currentTrack.year - nextYear) : Infinity;
+        if (distPrev <= tolerance || distNext <= tolerance) {
+          validSlots.push(s);
+        }
       }
     }
 
-    let realIndex = 0;
-    while (realIndex < cards.length && cards[realIndex].year <= currentTrack.year) {
-      realIndex++;
+    const valid = validSlots.includes(selectedSlot);
+
+    // Si acertó, su ranura elegida es la correcta.
+    // Si falló, calcular la ranura exacta donde debió ir.
+    let idealSlot = selectedSlot;
+    if (valid) {
+      idealSlot = selectedSlot;
+    } else {
+      let fallbackSlot = 0;
+      while (fallbackSlot < cards.length && cards[fallbackSlot].year < currentTrack.year) {
+        fallbackSlot++;
+      }
+      idealSlot = fallbackSlot;
     }
 
     // Si falló pero tiene el evento de Segunda Oportunidad intacto
@@ -664,7 +676,7 @@ export default function App() {
     }
 
     setIsCorrect(valid);
-    setCorrectSlotIndex(realIndex);
+    setCorrectSlotIndex(idealSlot);
     setIsRevealed(true);
     setSecondChanceActive(false);
 
@@ -792,6 +804,68 @@ export default function App() {
     setExactYearBonusClaimed(true);
   };
 
+  // Otorgar premio del Duelo Relámpago (Todos Juegan)
+  const handleAwardDuelWinner = (playerIdx, type = 'token') => {
+    if (duelWinnerIndex !== null || !currentTrack) return;
+    const target = players[playerIdx];
+    if (!target) return;
+
+    playSuccessSound();
+    const updated = [...players];
+    if (type === 'token') {
+      updated[playerIdx] = {
+        ...target,
+        tokens: Math.min(5, (target.tokens || 0) + 1)
+      };
+    } else {
+      const updatedCards = [...(target.cards || [])];
+      let insertIdx = 0;
+      while (insertIdx < updatedCards.length && updatedCards[insertIdx].year <= currentTrack.year) {
+        insertIdx++;
+      }
+      updatedCards.splice(insertIdx, 0, currentTrack);
+      updated[playerIdx] = {
+        ...target,
+        cards: updatedCards,
+        score: updatedCards.length
+      };
+    }
+
+    setPlayers(updated);
+    setDuelWinnerIndex(playerIdx);
+    setDuelRewardType(type);
+
+    try {
+      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+    } catch {}
+  };
+
+  // Deshacer premio del Duelo Relámpago si se tocó por error
+  const handleUndoDuelWinner = () => {
+    if (duelWinnerIndex === null) return;
+    const target = players[duelWinnerIndex];
+    if (!target) return;
+
+    const updated = [...players];
+    if (duelRewardType === 'token') {
+      updated[duelWinnerIndex] = {
+        ...target,
+        tokens: Math.max(0, (target.tokens || 0) - 1)
+      };
+    } else {
+      const updatedCards = (target.cards || []).filter((c) => c.id !== currentTrack.id);
+      updated[duelWinnerIndex] = {
+        ...target,
+        cards: updatedCards,
+        score: updatedCards.length
+      };
+    }
+
+    setPlayers(updated);
+    setDuelWinnerIndex(null);
+    setDuelRewardType(null);
+  };
+
   // Anular carta si juegan con regla estricta y no supo la canción
   const handleRevokeCardForNotKnowingSong = () => {
     if (!isCorrect || cardRevokedThisTurn) return;
@@ -834,21 +908,36 @@ export default function App() {
   const getHostScriptPrompt = () => {
     if (!currentTrack) return '';
     if (!hasStartedPlayback) {
+      if (activeEvent?.allPlayDuel) {
+        return `¡Evento Duelo Relámpago! Avisa a todos que preparen sus apuestas de año en voz alta. Dale a "▶️ Reproducir Canción".`;
+      }
       return `Pide silencio en la sala y dale a "▶️ Reproducir Canción". Dile a ${currentPlayer.name} que escuche con atención.`;
     }
     if (!isRevealed && selectedSlot === null) {
+      if (activeEvent?.allPlayDuel) {
+        return `¡Duelo Relámpago activo! Pide a todos los jugadores que digan su año estimado en voz alta. Luego pregúntale a ${currentPlayer.name} entre qué cartas coloca la suya.`;
+      }
       return `La música está sonando. Pregúntale a ${currentPlayer.name}: "¿Sabes qué canción es? ¿Entre qué dos cartas de tu tablero la quieres colocar?" (Toca la ranura [+] que te indique).`;
     }
     if (!isRevealed && selectedSlot !== null) {
       return `${currentPlayer.name} ya eligió su posición. Pregunta a la mesa: "¿Alguien quiere gastar 1⚡ para robar la canción antes de que revele?" Si nadie roba, pulsa "¡Revelar Año y Canción!".`;
     }
     if (isRevealed && isCorrect) {
+      if (activeEvent?.allPlayDuel) {
+        return `¡Correcto! Es '${currentTrack.title}' de ${currentTrack.artist} (${currentTrack.year}). Pregunta quién estuvo más cerca del año ${currentTrack.year} y entrégale su premio (+1⚡ o +1💿) en la caja rosa.`;
+      }
       return `¡Acertó! Anúncialo al grupo: "¡Correcto! Es '${currentTrack.title}' de ${currentTrack.artist} (${currentTrack.year})". Si además adivinó el título o artista en voz alta, dale su +1 ⚡ con el botón.`;
     }
     if (isRevealed && !isCorrect && wasPassed) {
+      if (activeEvent?.allPlayDuel) {
+        return `Nadie colocó la canción. ¡Era '${currentTrack.title}' de ${currentTrack.artist} (${currentTrack.year})! Revisa quién estuvo más cerca de ${currentTrack.year} y dale su premio en el Duelo Relámpago.`;
+      }
       return `Nadie se supo la canción. Dile a todos: "¡Era '${currentTrack.title}' de ${currentTrack.artist} (${currentTrack.year})!". Pulsa Siguiente Turno para pasar a la próxima persona.`;
     }
     if (isRevealed && !isCorrect && !wasPassed) {
+      if (activeEvent?.allPlayDuel) {
+        return `¡Falló la época! Era de ${currentTrack.year} ('${currentTrack.title}'). Pregunta a la mesa quién estuvo más cerca de ${currentTrack.year} para darle su premio en la caja rosa.`;
+      }
       return `¡Falló la época! Comenta a la sala: "¡No era de ese año! La canción es '${currentTrack.title}' de ${currentTrack.artist} (${currentTrack.year})". Nadie se lleva la carta. Pulsa Siguiente Turno.`;
     }
     return '';
@@ -1375,6 +1464,86 @@ export default function App() {
                       )}
                     </div>
                   )}
+
+                  {/* Selector interactivo de Ganador del Duelo Relámpago (Todos Juegan) */}
+                  {activeEvent?.allPlayDuel && (
+                    <div className="w-full max-w-xl p-3 sm:p-3.5 rounded-2xl border shadow-lg bg-pink-950/40 border-pink-500/50 space-y-2 mt-1 animate-fadeIn">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="p-1.5 rounded-xl bg-pink-500 text-white font-bold shrink-0">
+                            <Trophy className="w-3.5 h-3.5" />
+                          </span>
+                          <div>
+                            <h4 className="font-bold text-xs sm:text-sm text-pink-200">
+                              🔄 Duelo Relámpago: ¿Quién estuvo más cerca de {currentTrack.year}?
+                            </h4>
+                            <p className="text-[11px] text-slate-300">
+                              Elige al jugador que dijo el año más cercano para darle su premio:
+                            </p>
+                          </div>
+                        </div>
+                        {duelWinnerIndex !== null && (
+                          <span className="px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 text-[11px] font-bold border border-pink-500/40 shrink-0">
+                            Ganó {players[duelWinnerIndex]?.name}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 pt-1">
+                        {players.map((p, pIdx) => {
+                          const isWinner = duelWinnerIndex === pIdx;
+                          return (
+                            <div
+                              key={p.id}
+                              className={`p-2 rounded-xl border flex flex-col gap-1 transition-all ${
+                                isWinner
+                                  ? 'bg-pink-900/60 border-pink-400 ring-2 ring-pink-500/40 shadow-md'
+                                  : 'bg-slate-900/80 border-slate-700/60'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-xs text-white truncate max-w-[90px]">{p.name}</span>
+                                <span className="text-[10px] text-amber-400 font-mono font-bold">⚡{p.tokens || 0}</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-1 mt-0.5">
+                                <button
+                                  type="button"
+                                  disabled={duelWinnerIndex !== null}
+                                  onClick={() => handleAwardDuelWinner(pIdx, 'token')}
+                                  className="py-1 px-1 rounded-lg text-[10px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 disabled:opacity-40 cursor-pointer text-center"
+                                  title="Dar 1 Ficha ⚡"
+                                >
+                                  +1 ⚡
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={duelWinnerIndex !== null}
+                                  onClick={() => handleAwardDuelWinner(pIdx, 'card')}
+                                  className="py-1 px-1 rounded-lg text-[10px] font-bold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 disabled:opacity-40 cursor-pointer text-center"
+                                  title="Dar 1 Carta / Punto 💿"
+                                >
+                                  +1 💿
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {duelWinnerIndex !== null && (
+                        <div className="flex items-center justify-between text-[11px] text-pink-300 bg-pink-950/60 px-2.5 py-1 rounded-xl border border-pink-500/30">
+                          <span>¡Premio otorgado con éxito a <strong>{players[duelWinnerIndex]?.name}</strong>!</span>
+                          <button
+                            type="button"
+                            onClick={handleUndoDuelWinner}
+                            className="underline hover:text-white cursor-pointer ml-2"
+                          >
+                            Deshacer
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1413,8 +1582,10 @@ export default function App() {
                   }
                 }}
                 isRevealed={isRevealed && !isPeekingOtherPlayer}
+                isRoundCorrect={isCorrect && !isPeekingOtherPlayer}
                 correctSlotIndex={isPeekingOtherPlayer ? null : correctSlotIndex}
                 eliminatedSlots={eliminatedSlots}
+                highlightTrackId={isCorrect && !isPeekingOtherPlayer ? currentTrack?.id : null}
               />
             </div>
           </div>
