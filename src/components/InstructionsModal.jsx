@@ -11,7 +11,8 @@ import {
   Lightbulb, 
   Dices, 
   Clock, 
-  ShieldCheck 
+  ShieldCheck,
+  Mic 
 } from 'lucide-react';
 
 export default function InstructionsModal({ isOpen, onClose }) {
@@ -142,6 +143,16 @@ export default function InstructionsModal({ isOpen, onClose }) {
                   • <strong>🎯 Clásica:</strong> Orden cronológico exacto.<br />
                   • <strong>🌱 Relajada:</strong> Otorga margen de error de <strong>±2 años</strong> si dudas entre cartas muy cercanas (ideal para abuelos o niños).<br />
                   • <strong>🔥 Experto:</strong> Sin margen de error y comienzas con solo 1 ficha ⚡.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl border bg-slate-800/50 border-slate-700 text-xs">
+                <h4 className="font-bold text-white mb-1 flex items-center gap-1.5">
+                  <Mic className="w-4 h-4 text-amber-400" /> Dinámicas de Juego (¿Cómo jugar?)
+                </h4>
+                <p className="text-slate-400">
+                  • <strong>📱 Pasa y Juega:</strong> La tablet o móvil rota de mano en mano a cada jugador en su turno.<br />
+                  • <strong>🎙️ Maestro de Ceremonias (Host):</strong> Una sola persona sostiene la tablet, modera la partida, reproduce las canciones y sigue el teleprompter en pantalla indicando los pasos a cada participante. Puedes alternar de modo en cualquier momento con el botón del micrófono en la barra superior.
                 </p>
               </div>
             </div>

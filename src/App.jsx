@@ -60,6 +60,7 @@ export default function App() {
   const [activePlaylistId, setActivePlaylistId] = useState('mix-completo');
 
   // Parámetros de juego
+  const [playFormat, setPlayFormat] = useState('pass_and_play'); // 'pass_and_play' | 'host'
   const [difficulty, setDifficulty] = useState('classic'); // 'classic' | 'relaxed' | 'expert'
   const [turnTimerSeconds, setTurnTimerSeconds] = useState(0); // 0 (sin límite)
   const [enableEvents, setEnableEvents] = useState(true);
@@ -143,6 +144,7 @@ export default function App() {
         stealingPlayerIndex,
         playlistTitle,
         activePlaylistId,
+        playFormat,
         difficulty,
         turnTimerSeconds,
         enableEvents,
@@ -241,6 +243,7 @@ export default function App() {
       setViewingPlayerIndex(null);
       setPlaylistTitle(saved.playlistTitle || 'Urbano Argentino 🇦🇷');
       setActivePlaylistId(saved.activePlaylistId || 'urbano-argentina');
+      setPlayFormat(saved.playFormat || 'pass_and_play');
       setDifficulty(saved.difficulty || 'classic');
       setTurnTimerSeconds(saved.turnTimerSeconds || 0);
       setEnableEvents(saved.enableEvents !== undefined ? saved.enableEvents : true);
@@ -289,11 +292,13 @@ export default function App() {
     turnTimerSeconds: timerSec,
     enableEvents: eventsOn,
     eventProbability: prob = 20,
+    playFormat: format = 'pass_and_play',
     playlistId
   }) => {
     const chosenPlaylist = getPlaylistById(playlistId);
     setPlaylistTitle(chosenPlaylist.title);
     setActivePlaylistId(chosenPlaylist.id);
+    setPlayFormat(format);
     setDifficulty(diff);
     setTurnTimerSeconds(timerSec);
     setEnableEvents(eventsOn);
@@ -825,6 +830,30 @@ export default function App() {
     return `Artista empieza con "${initial}" • Lanzada en los ${decade}`;
   };
 
+  // Guion del presentador para el Modo Maestro de Ceremonias
+  const getHostScriptPrompt = () => {
+    if (!currentTrack) return '';
+    if (!hasStartedPlayback) {
+      return `Pide silencio en la sala y dale a "▶️ Reproducir Canción". Dile a ${currentPlayer.name} que escuche con atención.`;
+    }
+    if (!isRevealed && selectedSlot === null) {
+      return `La música está sonando. Pregúntale a ${currentPlayer.name}: "¿Sabes qué canción es? ¿Entre qué dos cartas de tu tablero la quieres colocar?" (Toca la ranura [+] que te indique).`;
+    }
+    if (!isRevealed && selectedSlot !== null) {
+      return `${currentPlayer.name} ya eligió su posición. Pregunta a la mesa: "¿Alguien quiere gastar 1⚡ para robar la canción antes de que revele?" Si nadie roba, pulsa "¡Revelar Año y Canción!".`;
+    }
+    if (isRevealed && isCorrect) {
+      return `¡Acertó! Anúncialo al grupo: "¡Correcto! Es '${currentTrack.title}' de ${currentTrack.artist} (${currentTrack.year})". Si además adivinó el título o artista en voz alta, dale su +1 ⚡ con el botón.`;
+    }
+    if (isRevealed && !isCorrect && wasPassed) {
+      return `Nadie se supo la canción. Dile a todos: "¡Era '${currentTrack.title}' de ${currentTrack.artist} (${currentTrack.year})!". Pulsa Siguiente Turno para pasar a la próxima persona.`;
+    }
+    if (isRevealed && !isCorrect && !wasPassed) {
+      return `¡Falló la época! Comenta a la sala: "¡No era de ese año! La canción es '${currentTrack.title}' de ${currentTrack.artist} (${currentTrack.year})". Nadie se lleva la carta. Pulsa Siguiente Turno.`;
+    }
+    return '';
+  };
+
   const isUrgentTimer = turnTimerSeconds > 0 && timeLeft <= 10 && !isRevealed;
 
   return (
@@ -861,6 +890,28 @@ export default function App() {
 
         {/* Acciones de Cabecera */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Alternador de Modo Maestro de Ceremonias / Pasa y Juega */}
+          {gameState === 'playing' && (
+            <button
+              onClick={() => setPlayFormat((prev) => (prev === 'host' ? 'pass_and_play' : 'host'))}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-bold border transition-all active:scale-95 cursor-pointer ${
+                playFormat === 'host'
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-md'
+                  : 'bg-slate-800/80 text-slate-300 hover:text-white border-slate-700/50'
+              }`}
+              title={
+                playFormat === 'host'
+                  ? 'Modo Host activo: la tablet la controla el anfitrión. Toca para cambiar a Pasa y Juega.'
+                  : 'Modo Pasa y Juega activo: la tablet rota entre jugadores. Toca para activar Modo Anfitrión.'
+              }
+            >
+              <Mic className={`w-3.5 h-3.5 ${playFormat === 'host' ? 'text-amber-400' : 'text-slate-400'}`} />
+              <span className="hidden sm:inline">
+                {playFormat === 'host' ? 'Modo Host 🎙️' : 'Pasa y Juega'}
+              </span>
+            </button>
+          )}
+
           {/* Botón de Tema Claro (Exteriores) / Oscuro */}
           <button
             onClick={toggleTheme}
@@ -930,6 +981,37 @@ export default function App() {
         {gameState === 'playing' && currentTrack && (
           <div className="w-full flex flex-col items-center space-y-2.5 animate-fadeIn">
             
+            {/* Guion del Presentador para el Modo Maestro de Ceremonias */}
+            {playFormat === 'host' && (
+              <div 
+                className="w-full p-3 sm:p-3.5 rounded-2xl border shadow-lg flex items-start gap-3 animate-fadeIn"
+                style={{ 
+                  backgroundColor: 'var(--color-bg-surface-elevated)', 
+                  borderColor: 'var(--color-accent)' 
+                }}
+              >
+                <div 
+                  className="p-2 rounded-xl text-slate-950 font-black shrink-0 shadow-sm"
+                  style={{ backgroundColor: 'var(--color-accent)' }}
+                >
+                  <Mic className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-[11px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                      <span>🎙️ Guion del Anfitrión / Presentador</span>
+                    </h4>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 font-mono font-bold border border-amber-500/30 shrink-0">
+                      Turno de {currentPlayer.name}
+                    </span>
+                  </div>
+                  <p className="text-xs sm:text-sm text-slate-200 mt-1 leading-relaxed font-semibold">
+                    {getHostScriptPrompt()}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Banner de Evento Sorpresa (si está activo este turno) */}
             {activeEvent && !isRevealed && (
               <div 
@@ -1034,10 +1116,12 @@ export default function App() {
                   <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                     {stealingPlayerIndex !== null
                       ? `¡Turno robado por ${currentPlayer.name}!`
+                      : playFormat === 'host'
+                      ? `🎙️ Presentando turno ${turnCount} • ${currentPlayer.name}`
                       : `Turno ${turnCount} • ${difficulty === 'relaxed' ? 'Modo Relajado (±2a)' : 'Modo Clásico'}`}
                   </span>
                   <h2 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
-                    Juega: {currentPlayer.name}
+                    {playFormat === 'host' ? `Le toca a: ${currentPlayer.name}` : `Juega: ${currentPlayer.name}`}
                     <span className="text-xs font-mono px-2 py-0.2 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30">
                       ⚡ {currentPlayer.tokens || 0}
                     </span>
@@ -1300,7 +1384,7 @@ export default function App() {
               <div className="flex flex-wrap items-center justify-between gap-2 px-2 mb-0.5">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                    Línea de tiempo de {displayedPlayer.name} ({displayedPlayer.cards?.length || 0} canciones)
+                    {playFormat === 'host' ? '🎤 Tablero de' : 'Línea de tiempo de'} {displayedPlayer.name} ({displayedPlayer.cards?.length || 0} canciones)
                   </span>
                   {isPeekingOtherPlayer && (
                     <button
@@ -1415,6 +1499,7 @@ export default function App() {
             handleStartGame({
               players,
               targetCards,
+              playFormat,
               difficulty,
               turnTimerSeconds,
               enableEvents,
@@ -1462,7 +1547,7 @@ export default function App() {
 
       {/* Pie de página sutil */}
       <footer className="w-full py-1.5 text-center text-[10px] text-slate-600 border-t border-slate-800/40">
-        BeatLine • Pasa y Juega • Optimizado para Tablet
+        BeatLine • {playFormat === 'host' ? '🎙️ Modo Maestro de Ceremonias' : '📱 Modo Pasa y Juega'} • Optimizado para Tablet
       </footer>
     </div>
   );

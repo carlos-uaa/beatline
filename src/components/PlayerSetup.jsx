@@ -10,7 +10,8 @@ import {
   Clock, 
   Dices, 
   ShieldCheck,
-  Play
+  Play,
+  Mic
 } from 'lucide-react';
 import { getAllPlaylists, deleteCustomPlaylist } from '../services/playlistStorage';
 import PlaylistCreatorModal from './PlaylistCreatorModal';
@@ -21,6 +22,7 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
     { id: 2, name: 'Jugador 2', cards: [], score: 0, tokens: 2 }
   ]);
   const [targetCards, setTargetCards] = useState(10);
+  const [playFormat, setPlayFormat] = useState('pass_and_play'); // 'pass_and_play' | 'host'
   const [difficulty, setDifficulty] = useState('classic'); // 'classic' | 'relaxed' | 'expert'
   const [turnTimerSeconds, setTurnTimerSeconds] = useState(0); // 0 (sin límite), 30, 45, 60
   const [eventProbability, setEventProbability] = useState(20); // Probabilidad de eventos sorpresa (por defecto 20%)
@@ -84,6 +86,7 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
       turnTimerSeconds,
       enableEvents: eventProbability > 0,
       eventProbability,
+      playFormat,
       playlistId: selectedPlaylistId
     });
   };
@@ -200,7 +203,7 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
         </div>
       </div>
 
-      {/* 2. Dificultad y Temporizador de Adrenalina */}
+      {/* 2. Dificultad, Dinámica y Temporizador de Adrenalina */}
       <div
         className="p-4 sm:p-5 rounded-2xl border space-y-3.5 shadow-xl"
         style={{
@@ -208,7 +211,52 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
           borderColor: 'var(--border-subtle)'
         }}
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Selector de Dinámica de Juego: Pasa y Juega vs Maestro de Ceremonias */}
+        <div>
+          <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1.5">
+            <Mic className="w-3.5 h-3.5 text-amber-400" />
+            ¿Cómo van a jugar hoy?
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setPlayFormat('pass_and_play')}
+              className={`p-3 rounded-2xl text-left border transition-all cursor-pointer ${
+                playFormat === 'pass_and_play'
+                  ? 'bg-violet-950/60 border-violet-500 ring-2 ring-violet-500/30 text-white shadow-md'
+                  : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-2 font-bold text-xs sm:text-sm">
+                <Users className="w-4 h-4 text-violet-400" />
+                <span>📱 Pasa y Juega</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                La tablet se va pasando de mano en mano a cada jugador en su turno.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPlayFormat('host')}
+              className={`p-3 rounded-2xl text-left border transition-all cursor-pointer ${
+                playFormat === 'host'
+                  ? 'bg-amber-950/60 border-amber-500 ring-2 ring-amber-500/30 text-white shadow-md'
+                  : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-2 font-bold text-xs sm:text-sm text-amber-300">
+                <Mic className="w-4 h-4 text-amber-400" />
+                <span>🎙️ Maestro de Ceremonias (Host)</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Una sola persona maneja la tablet, pone la música y modera la partida como en un show de TV.
+              </p>
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800">
           {/* Selector de Dificultad */}
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1.5">
