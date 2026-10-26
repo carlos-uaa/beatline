@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   BookOpen,
   RotateCcw,
-  Trophy,
   Sparkles,
   Check,
   X,
@@ -13,7 +12,10 @@ import {
   SkipForward,
   Gift,
   Mic,
-  Undo2
+  Undo2,
+  Flag,
+  Infinity as InfinityIcon,
+  Eye
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -31,13 +33,19 @@ import {
   clearGameSession,
   hasActiveSession
 } from './services/gameStorage';
+import {
+  playSlotSelectSound,
+  playSuccessSound,
+  playErrorSound,
+  playTokenSound
+} from './utils/soundEffects';
 
 export default function App() {
   const [gameState, setGameState] = useState('setup'); // 'setup' | 'playing' | 'gameover'
   const [players, setPlayers] = useState([]);
   const [activePlayerIndex, setActivePlayerIndex] = useState(0);
-  // Si otro jugador usa 1 ficha para robar el turno actual, guardamos quién está respondiendo
   const [stealingPlayerIndex, setStealingPlayerIndex] = useState(null);
+  const [viewingPlayerIndex, setViewingPlayerIndex] = useState(null);
   const [playlistTitle, setPlaylistTitle] = useState('Urbano Argentino 🇦🇷');
   const [activePlaylistId, setActivePlaylistId] = useState('urbano-argentina');
 
@@ -50,6 +58,10 @@ export default function App() {
   const [correctSlotIndex, setCorrectSlotIndex] = useState(null);
   const [targetCards, setTargetCards] = useState(10);
   const [winner, setWinner] = useState(null);
+
+  // Modo Infinito / Libre después de que alguien alcance la meta
+  const [isEndlessMode, setIsEndlessMode] = useState(false);
+  const [isFinalEnd, setIsFinalEnd] = useState(false);
 
   // Estados de fichas y bonus en el turno actual
   const [bonusClaimedThisTurn, setBonusClaimedThisTurn] = useState(false);
@@ -85,6 +97,7 @@ export default function App() {
         correctSlotIndex,
         targetCards,
         winner,
+        isEndlessMode,
         bonusClaimedThisTurn,
         cardRevokedThisTurn
       });
@@ -104,6 +117,7 @@ export default function App() {
     correctSlotIndex,
     targetCards,
     winner,
+    isEndlessMode,
     bonusClaimedThisTurn,
     cardRevokedThisTurn
   ]);
@@ -117,6 +131,7 @@ export default function App() {
       setStealingPlayerIndex(
         saved.stealingPlayerIndex !== undefined ? saved.stealingPlayerIndex : null
       );
+      setViewingPlayerIndex(null);
       setPlaylistTitle(saved.playlistTitle || 'Urbano Argentino 🇦🇷');
       setActivePlaylistId(saved.activePlaylistId || 'urbano-argentina');
       setDeck(saved.deck || []);
@@ -127,6 +142,7 @@ export default function App() {
       setCorrectSlotIndex(saved.correctSlotIndex !== undefined ? saved.correctSlotIndex : null);
       setTargetCards(saved.targetCards || 10);
       setWinner(saved.winner || null);
+      setIsEndlessMode(saved.isEndlessMode || false);
       setBonusClaimedThisTurn(saved.bonusClaimedThisTurn || false);
       setCardRevokedThisTurn(saved.cardRevokedThisTurn || false);
       setGameState('playing');
@@ -152,7 +168,6 @@ export default function App() {
 
     const shuffled = shuffleDeck(chosenPlaylist.tracks);
 
-    // Repartir 1 carta inicial a cada jugador como base de su línea de tiempo
     const preparedPlayers = [];
     let currentDeck = [...shuffled];
 
@@ -164,7 +179,7 @@ export default function App() {
       const enriched = await enrichTrack(initialTrack);
       preparedPlayers.push({
         ...p,
-        tokens: p.tokens !== undefined ? p.tokens : 2,
+        tokens: 2,
         cards: [enriched],
         score: 1
       });
@@ -174,6 +189,9 @@ export default function App() {
     setTargetCards(target);
     setActivePlayerIndex(0);
     setStealingPlayerIndex(null);
+    setViewingPlayerIndex(null);
+    setIsEndlessMode(false);
+    setIsFinalEnd(false);
     setGameState('playing');
     setWinner(null);
     clearGameSession();
@@ -188,6 +206,7 @@ export default function App() {
     setIsCorrect(null);
     setCorrectSlotIndex(null);
     setStealingPlayerIndex(null);
+    setViewingPlayerIndex(null);
     setBonusClaimedThisTurn(false);
     setCardRevokedThisTurn(false);
 
@@ -212,11 +231,19 @@ export default function App() {
     stealingPlayerIndex !== null ? stealingPlayerIndex : activePlayerIndex;
   const currentPlayer = players[effectivePlayerIndex] || {};
 
+  // Jugador cuya línea de tiempo se está viendo en pantalla
+  const displayedPlayerIndex =
+    viewingPlayerIndex !== null ? viewingPlayerIndex : effectivePlayerIndex;
+  const displayedPlayer = players[displayedPlayerIndex] || currentPlayer;
+  const isPeekingOtherPlayer =
+    viewingPlayerIndex !== null && viewingPlayerIndex !== effectivePlayerIndex;
+
   // Acción de Ficha 1: Robar el turno cuando el jugador activo no se sabe la canción
   const handleStealTurn = (challengerIdx) => {
     const challenger = players[challengerIdx];
     if (!challenger || (challenger.tokens || 0) < 1) return;
 
+    playTokenSound();
     const updatedPlayers = [...players];
     updatedPlayers[challengerIdx] = {
       ...challenger,
@@ -225,6 +252,7 @@ export default function App() {
 
     setPlayers(updatedPlayers);
     setStealingPlayerIndex(challengerIdx);
+    setViewingPlayerIndex(null);
     setSelectedSlot(null);
     setShowStealModal(false);
   };
@@ -233,6 +261,7 @@ export default function App() {
   const handleSkipSongWithToken = async () => {
     if ((currentPlayer.tokens || 0) < 1 || isRevealed) return;
 
+    playTokenSound();
     const updatedPlayers = [...players];
     updatedPlayers[effectivePlayerIndex] = {
       ...currentPlayer,
@@ -240,7 +269,6 @@ export default function App() {
     };
     setPlayers(updatedPlayers);
 
-    // Sacar nueva canción manteniendo el mismo jugador
     await prepareNextTurn(deck, activePlayerIndex);
   };
 
@@ -248,6 +276,7 @@ export default function App() {
   const handleRedeemFreeCard = () => {
     if ((currentPlayer.tokens || 0) < 3 || !currentTrack || isRevealed) return;
 
+    playSuccessSound();
     const cards = currentPlayer.cards || [];
     let insertIdx = 0;
     while (insertIdx < cards.length && cards[insertIdx].year <= currentTrack.year) {
@@ -266,6 +295,7 @@ export default function App() {
     };
 
     setPlayers(updatedPlayers);
+    setViewingPlayerIndex(null);
     setSelectedSlot(insertIdx);
     setCorrectSlotIndex(insertIdx);
     setIsCorrect(true);
@@ -275,12 +305,13 @@ export default function App() {
       confetti({ particleCount: 60, spread: 70, origin: { y: 0.7 } });
     } catch {}
 
-    if (updatedCards.length >= targetCards) {
+    // Si aún no están en Modo Infinito y alcanzó la meta, mostrar celebración
+    if (!isEndlessMode && updatedCards.length >= targetCards) {
       setWinner(updatedPlayers[effectivePlayerIndex]);
+      setIsFinalEnd(false);
       setTimeout(() => {
         setGameState('gameover');
-        clearGameSession();
-      }, 1800);
+      }, 1600);
     }
   };
 
@@ -288,6 +319,7 @@ export default function App() {
   const handleReveal = () => {
     if (selectedSlot === null || !currentTrack) return;
 
+    setViewingPlayerIndex(null);
     const cards = currentPlayer.cards || [];
     let valid = true;
 
@@ -315,6 +347,7 @@ export default function App() {
     setIsRevealed(true);
 
     if (valid) {
+      playSuccessSound();
       try {
         confetti({
           particleCount: 50,
@@ -334,19 +367,42 @@ export default function App() {
       };
       setPlayers(updatedPlayers);
 
-      if (updatedCards.length >= targetCards) {
+      if (!isEndlessMode && updatedCards.length >= targetCards) {
         setWinner(updatedPlayers[effectivePlayerIndex]);
+        setIsFinalEnd(false);
         setTimeout(() => {
           setGameState('gameover');
-          clearGameSession();
-        }, 1800);
+        }, 1600);
       }
+    } else {
+      playErrorSound();
     }
+  };
+
+  // Continuar la partida en Modo Infinito / Libre después de que alguien llegó a la meta
+  const handleContinueEndless = () => {
+    setIsEndlessMode(true);
+    setIsFinalEnd(false);
+    setGameState('playing');
+    // Si la carta actual ya fue revelada, pasamos automáticamente al siguiente turno
+    if (isRevealed) {
+      const nextIndex = (activePlayerIndex + 1) % players.length;
+      prepareNextTurn(deck, nextIndex);
+    }
+  };
+
+  // Finalizar la partida manualmente en cualquier momento para ver el podio final
+  const handleFinishMatchNow = () => {
+    const sorted = [...players].sort((a, b) => (b.cards?.length || 0) - (a.cards?.length || 0));
+    setWinner(sorted[0] || currentPlayer);
+    setIsFinalEnd(true);
+    setGameState('gameover');
   };
 
   // Premiar con +1 Ficha si adivinó Canción y Artista en voz alta
   const handleAwardGuessBonus = () => {
     if (bonusClaimedThisTurn) return;
+    playTokenSound();
     const updatedPlayers = [...players];
     const currentTokens = currentPlayer.tokens || 0;
     updatedPlayers[effectivePlayerIndex] = {
@@ -360,6 +416,7 @@ export default function App() {
   // Si en la familia juegan con regla estricta ("Si no adivinó la canción, no se lleva la carta")
   const handleRevokeCardForNotKnowingSong = () => {
     if (!isCorrect || cardRevokedThisTurn) return;
+    playErrorSound();
     const updatedCards = (currentPlayer.cards || []).filter((c) => c.id !== currentTrack.id);
     const updatedPlayers = [...players];
     updatedPlayers[effectivePlayerIndex] = {
@@ -390,43 +447,61 @@ export default function App() {
     <div className="min-h-screen flex flex-col justify-between select-none relative overflow-x-hidden">
       {/* Barra Superior / Header */}
       <header
-        className="w-full px-4 sm:px-8 py-3 flex items-center justify-between border-b backdrop-blur-md sticky top-0 z-40"
+        className="w-full px-3 sm:px-8 py-3 flex items-center justify-between border-b backdrop-blur-md sticky top-0 z-40"
         style={{
           backgroundColor: 'var(--color-bg-glass)',
           borderColor: 'var(--border-subtle)'
         }}
       >
         {/* Logo */}
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-md bg-gradient-to-tr from-violet-600 to-cyan-500 text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-md bg-gradient-to-tr from-violet-600 to-cyan-500 text-white shrink-0">
             <Disc className="w-5 h-5 animate-spin-slow" />
           </div>
-          <div>
-            <h1 className="font-black text-lg sm:text-xl tracking-tight text-white leading-tight">
-              BeatLine
-            </h1>
-            <span className="text-[10px] font-semibold text-slate-400 block -mt-1 font-mono truncate max-w-[180px] sm:max-w-xs">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="font-black text-lg sm:text-xl tracking-tight text-white leading-tight">
+                BeatLine
+              </h1>
+              {gameState === 'playing' && isEndlessMode && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 flex items-center gap-1">
+                  <InfinityIcon className="w-3 h-3" /> Modo Libre
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-semibold text-slate-400 block -mt-0.5 font-mono truncate max-w-[160px] sm:max-w-xs">
               {playlistTitle}
             </span>
           </div>
         </div>
 
         {/* Acciones de Cabecera */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
+          {gameState === 'playing' && (
+            <button
+              onClick={handleFinishMatchNow}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-amber-300 hover:text-amber-200 bg-amber-950/50 hover:bg-amber-900/60 border border-amber-500/40 transition-all active:scale-95 cursor-pointer"
+              title="Terminar la partida y ver el podio de ganadores"
+            >
+              <Flag className="w-3.5 h-3.5" />
+              <span>Finalizar Partida</span>
+            </button>
+          )}
+
           <button
             onClick={() => setShowInstructions(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-200 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/50 transition-all active:scale-95 cursor-pointer"
             title="Ver manual, reglas y uso de fichas"
           >
             <BookOpen className="w-4 h-4 text-violet-400" />
-            <span>Reglas y Fichas ⚡</span>
+            <span className="hidden sm:inline">Reglas y Fichas ⚡</span>
           </button>
 
           {gameState === 'playing' && (
             <button
               onClick={() => setShowResetConfirm(true)}
               className="p-2 rounded-xl text-slate-400 hover:text-rose-400 bg-slate-800/50 hover:bg-rose-950/30 border border-slate-700/40 transition-colors cursor-pointer"
-              title="Salir o reiniciar partida"
+              title="Salir al menú principal"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -446,21 +521,29 @@ export default function App() {
 
         {gameState === 'playing' && currentTrack && (
           <div className="w-full flex flex-col items-center space-y-3 animate-fadeIn">
-            {/* Marcador Global de Jugadores (Cartas 💿 y Fichas ⚡) */}
+            {/* Marcador Global de Jugadores (Toca un jugador para espiar su línea de tiempo) */}
             <div className="w-full flex items-center gap-2 overflow-x-auto pb-1 px-1">
               {players.map((p, idx) => {
                 const isTurn = idx === effectivePlayerIndex;
                 const isStealing = idx === stealingPlayerIndex;
+                const isViewing = idx === displayedPlayerIndex;
                 return (
-                  <div
+                  <button
                     key={p.id}
-                    className={`flex items-center justify-between gap-3 px-3.5 py-2 rounded-2xl border text-xs transition-all shrink-0 ${
+                    type="button"
+                    onClick={() =>
+                      setViewingPlayerIndex(idx === effectivePlayerIndex ? null : idx)
+                    }
+                    className={`flex items-center justify-between gap-3 px-3.5 py-2 rounded-2xl border text-xs transition-all shrink-0 cursor-pointer ${
                       isStealing
                         ? 'bg-amber-950/60 border-amber-400 text-white shadow-lg'
                         : isTurn
                         ? 'bg-violet-950/70 border-violet-500 text-white shadow-md'
-                        : 'bg-slate-900/60 border-slate-800 text-slate-400'
+                        : isViewing
+                        ? 'bg-cyan-950/60 border-cyan-400 text-white'
+                        : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
                     }`}
+                    title="Toca para ver la línea de tiempo de este jugador"
                   >
                     <div className="flex items-center gap-2">
                       <span className="font-bold truncate max-w-[100px]">{p.name}</span>
@@ -472,13 +555,14 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-2 font-mono font-bold">
                       <span className="text-cyan-300" title="Cartas en su línea del tiempo">
-                        💿 {p.cards?.length || 0}/{targetCards}
+                        💿 {p.cards?.length || 0}
+                        {!isEndlessMode ? `/${targetCards}` : ''}
                       </span>
                       <span className="text-amber-400" title="Fichas BeatLine disponibles">
                         ⚡ {p.tokens || 0}
                       </span>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -513,7 +597,6 @@ export default function App() {
               {/* Botones de Uso de Fichas antes de revelar */}
               {!isRevealed && (
                 <div className="flex flex-wrap items-center gap-2">
-                  {/* Botón: Otro jugador roba la canción si el actual no se la sabe */}
                   {players.some((p, i) => i !== effectivePlayerIndex && (p.tokens || 0) >= 1) && (
                     <button
                       type="button"
@@ -526,7 +609,6 @@ export default function App() {
                     </button>
                   )}
 
-                  {/* Botón: Saltar canción con 1 ficha */}
                   {(currentPlayer.tokens || 0) >= 1 && (
                     <button
                       type="button"
@@ -539,7 +621,6 @@ export default function App() {
                     </button>
                   )}
 
-                  {/* Botón: Comprar carta gratis con 3 fichas */}
                   {(currentPlayer.tokens || 0) >= 3 && (
                     <button
                       type="button"
@@ -570,24 +651,28 @@ export default function App() {
               {!isRevealed ? (
                 <button
                   onClick={handleReveal}
-                  disabled={selectedSlot === null || isEnriching}
+                  disabled={selectedSlot === null || isEnriching || isPeekingOtherPlayer}
                   className="px-8 py-3.5 rounded-2xl font-black text-base text-white shadow-xl transition-all duration-300 transform active:scale-95 disabled:opacity-40 disabled:scale-100 flex items-center gap-2 cursor-pointer"
                   style={{
                     backgroundColor:
-                      selectedSlot !== null
+                      selectedSlot !== null && !isPeekingOtherPlayer
                         ? 'var(--color-primary)'
                         : 'var(--color-bg-surface-elevated)',
-                    boxShadow: selectedSlot !== null ? 'var(--shadow-glow-primary)' : 'none'
+                    boxShadow:
+                      selectedSlot !== null && !isPeekingOtherPlayer
+                        ? 'var(--shadow-glow-primary)'
+                        : 'none'
                   }}
                 >
                   <Sparkles className="w-5 h-5 text-amber-300" />
-                  {selectedSlot === null
+                  {isPeekingOtherPlayer
+                    ? `Viendo a ${displayedPlayer.name} (Vuelve a ${currentPlayer.name} para jugar)`
+                    : selectedSlot === null
                     ? '1º Di qué canción es y toca una ranura [ + ] abajo'
                     : '¡Revelar Año y Canción!'}
                 </button>
               ) : (
                 <div className="flex flex-col items-center gap-3 w-full max-w-2xl">
-                  {/* Resultado principal */}
                   <div className="flex flex-wrap items-center justify-center gap-2.5">
                     <div
                       className={`px-4 py-2.5 rounded-xl border flex items-center gap-2 text-xs sm:text-sm font-bold ${
@@ -599,7 +684,9 @@ export default function App() {
                       {isCorrect ? (
                         <>
                           <Check className="w-5 h-5 shrink-0" />
-                          <span>¡Año correcto ({currentTrack.year})! Carta sumada a {currentPlayer.name}</span>
+                          <span>
+                            ¡Año correcto ({currentTrack.year})! Carta sumada a {currentPlayer.name}
+                          </span>
                         </>
                       ) : (
                         <>
@@ -622,7 +709,7 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Validación Verbal Familiar: Ganar +1 Ficha o Anular si no se supo la canción */}
+                  {/* Validación Verbal Familiar */}
                   <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
                     <button
                       type="button"
@@ -656,23 +743,42 @@ export default function App() {
               )}
             </div>
 
-            {/* Zona Inferior: Línea de Tiempo del Jugador que está respondiendo */}
+            {/* Zona Inferior: Línea de Tiempo */}
             <div className="w-full">
-              <div className="flex items-center justify-between px-2 mb-1">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  Línea de tiempo de {currentPlayer.name} ({currentPlayer.cards?.length || 0} canciones)
-                </span>
+              <div className="flex flex-wrap items-center justify-between gap-2 px-2 mb-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    Línea de tiempo de {displayedPlayer.name} ({displayedPlayer.cards?.length || 0}{' '}
+                    canciones)
+                  </span>
+                  {isPeekingOtherPlayer && (
+                    <button
+                      type="button"
+                      onClick={() => setViewingPlayerIndex(null)}
+                      className="px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Eye className="w-3 h-3" /> Volver al turno de {currentPlayer.name}
+                    </button>
+                  )}
+                </div>
                 <span className="text-[11px] text-slate-500">
-                  Toca una ranura [ + ] para ubicar el año
+                  {isPeekingOtherPlayer
+                    ? 'Modo vista previa (Solo lectura)'
+                    : 'Toca una ranura [ + ] para ubicar el año'}
                 </span>
               </div>
 
               <Timeline
-                cards={currentPlayer.cards || []}
-                selectedIndex={selectedSlot}
-                onSelectSlot={(idx) => !isRevealed && setSelectedSlot(idx)}
-                isRevealed={isRevealed}
-                correctSlotIndex={correctSlotIndex}
+                cards={displayedPlayer.cards || []}
+                selectedIndex={isPeekingOtherPlayer ? null : selectedSlot}
+                onSelectSlot={(idx) => {
+                  if (!isRevealed && !isPeekingOtherPlayer) {
+                    playSlotSelectSound();
+                    setSelectedSlot(idx);
+                  }
+                }}
+                isRevealed={isRevealed && !isPeekingOtherPlayer}
+                correctSlotIndex={isPeekingOtherPlayer ? null : correctSlotIndex}
               />
             </div>
           </div>
@@ -696,7 +802,8 @@ export default function App() {
               </button>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Si <strong>{currentPlayer.name}</strong> no se sabe esta canción, elige qué familiar gastará <strong>1 Ficha ⚡</strong> para robarla y acomodarla en su propia línea del tiempo:
+              Si <strong>{currentPlayer.name}</strong> no se sabe esta canción, elige qué familiar gastará{' '}
+              <strong>1 Ficha ⚡</strong> para robarla y acomodarla en su propia línea del tiempo:
             </p>
 
             <div className="space-y-2">
@@ -733,11 +840,13 @@ export default function App() {
         onClose={() => setShowInstructions(false)}
       />
 
-      {/* Modal de Victoria / Fin de Partida */}
-      {gameState === 'gameover' && winner && (
+      {/* Modal de Victoria / Fin de Partida (Con opción de Seguir Jugando en Modo Libre) */}
+      {gameState === 'gameover' && (
         <GameOverModal
           winner={winner}
           players={players}
+          isFinalEnd={isFinalEnd}
+          onContinueEndless={handleContinueEndless}
           onRematch={() =>
             handleStartGame({
               players,
@@ -745,7 +854,10 @@ export default function App() {
               playlistId: activePlaylistId
             })
           }
-          onNewGame={() => setGameState('setup')}
+          onNewGame={() => {
+            clearGameSession();
+            setGameState('setup');
+          }}
         />
       )}
 
@@ -757,9 +869,9 @@ export default function App() {
               <AlertTriangle className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-base">¿Reiniciar o cambiar Playlist?</h3>
+              <h3 className="font-bold text-white text-base">¿Salir al menú principal?</h3>
               <p className="text-xs text-slate-400 mt-1">
-                Volverás a la pantalla de configuración para elegir otra playlist o cambiar jugadores.
+                Volverás a la configuración para cambiar de playlist o iniciar una nueva partida.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3 pt-2">
