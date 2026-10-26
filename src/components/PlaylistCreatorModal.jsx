@@ -11,7 +11,8 @@ import {
   FileText, 
   Check, 
   Loader2,
-  Sparkles 
+  Sparkles,
+  Upload
 } from 'lucide-react';
 import { 
   searchSongsLive, 
@@ -45,8 +46,9 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
   // Importador de Deezer
   const [deezerUrl, setDeezerUrl] = useState('');
 
-  // Importador por lista de texto
+  // Importador por lista de texto o CSV
   const [bulkText, setBulkText] = useState('');
+  const fileInputRef = useRef(null);
 
   if (!isOpen) return null;
 
@@ -145,30 +147,116 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
     }
   };
 
-  const handleBulkProcess = () => {
-    const lines = bulkText
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 2);
+  const parseCsvLine = (line) => {
+    const values = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        values.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    values.push(current.trim());
+    return values;
+  };
 
+  const handleProcessTextOrCsv = (rawInput = null) => {
+    const textToProcess = (typeof rawInput === 'string' ? rawInput : bulkText).trim();
+    if (!textToProcess) return;
+
+    const lines = textToProcess.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 2);
     if (lines.length === 0) return;
 
     setErrorMsg('');
-    const resolved = lines.map((line, i) => {
-      const parts = line.split('-').map((s) => s.trim());
-      const artist = parts.length > 1 ? parts[0] : 'Artista';
-      const songTitle = parts.length > 1 ? parts.slice(1).join(' - ') : line;
-      return {
-        id: `bulk-${Date.now()}-${i}`,
-        title: songTitle,
-        artist: artist,
-        searchTerm: line
-      };
-    });
 
-    setTracks((prev) => [...prev, ...resolved]);
+    // Detectar si es un CSV con cabeceras (como Exportify, TuneMyMusic, Chosic)
+    const firstLineValues = parseCsvLine(lines[0]);
+    const firstLineLower = firstLineValues.map((v) => v.toLowerCase());
+
+    const titleIdx = firstLineLower.findIndex((v) =>
+      v.includes('track name') || v.includes('title') || v.includes('nombre') || v.includes('canción') || v.includes('cancion')
+    );
+    const artistIdx = firstLineLower.findIndex((v) =>
+      v.includes('artist') || v.includes('artista')
+    );
+    const dateIdx = firstLineLower.findIndex((v) =>
+      v.includes('release date') || v.includes('date') || v.includes('fecha') || v.includes('year') || v.includes('año')
+    );
+
+    let parsedTracks = [];
+
+    if (titleIdx !== -1 && artistIdx !== -1) {
+      // Formato CSV delimitado con cabeceras
+      for (let i = 1; i < lines.length; i++) {
+        const row = parseCsvLine(lines[i]);
+        const trackTitle = row[titleIdx];
+        const artistName = row[artistIdx];
+        let yearNum = null;
+        if (dateIdx !== -1 && row[dateIdx]) {
+          const match = row[dateIdx].match(/\b(19\d\d|20\d\d)\b/);
+          if (match) yearNum = parseInt(match[1], 10);
+        }
+
+        if (trackTitle && artistName) {
+          parsedTracks.push({
+            id: `csv-${Date.now()}-${i}`,
+            title: trackTitle,
+            artist: artistName,
+            year: yearNum,
+            searchTerm: `${artistName} ${trackTitle}`
+          });
+        }
+      }
+    } else {
+      // Formato de texto línea por línea ("Artista - Canción" o "Canción")
+      parsedTracks = lines.map((line, i) => {
+        const cleanLine = line.replace(/^\d+[\.\)\-]\s*/, '');
+        const parts = cleanLine.split('-').map((s) => s.trim());
+        const artist = parts.length > 1 ? parts[0] : 'Artista';
+        const songTitle = parts.length > 1 ? parts.slice(1).join(' - ') : cleanLine;
+        return {
+          id: `bulk-${Date.now()}-${i}`,
+          title: songTitle,
+          artist: artist,
+          searchTerm: cleanLine
+        };
+      });
+    }
+
+    if (parsedTracks.length === 0) {
+      setErrorMsg('No se detectaron canciones válidas en el texto o archivo.');
+      return;
+    }
+
+    setTracks((prev) => [...prev, ...parsedTracks]);
     setBulkText('');
+    setImportStatus(`¡Se cargaron ${parsedTracks.length} canciones con éxito!`);
     setMode('search');
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result;
+      if (typeof content === 'string') {
+        handleProcessTextOrCsv(content);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   const handleSaveManualPlaylist = () => {
@@ -271,8 +359,8 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            <FileText className="w-4 h-4" />
-            Pegar Lista de Texto
+            <Upload className="w-4 h-4" />
+            Pegar Lista / Subir CSV 📄
           </button>
           <button
             onClick={() => setMode('deezer')}
@@ -506,39 +594,65 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
             </div>
           )}
 
-          {/* MODO LISTA DE TEXTO */}
+          {/* MODO LISTA DE TEXTO O ARCHIVO CSV */}
           {mode === 'bulk' && (
             <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-800/40 space-y-1">
-                <h4 className="font-bold text-sm text-amber-300">
-                  Pega una lista de canciones desde tu bloc de notas o WhatsApp
-                </h4>
-                <p className="text-xs text-slate-300">
-                  Escribe una canción por línea con el formato <strong>Artista - Canción</strong>. El sistema buscará los audios y años oficiales automáticamente.
-                </p>
+              {/* Opción 1: Subida de archivo directa (Ideal para 300+ canciones) */}
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                className="p-4 sm:p-5 rounded-2xl border-2 border-dashed border-amber-500/50 hover:border-amber-400 bg-amber-950/20 hover:bg-amber-950/30 text-center cursor-pointer transition-all space-y-1.5"
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.txt"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+                <div className="inline-flex p-2.5 rounded-full bg-amber-400/15 text-amber-400">
+                  <Upload className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="font-bold text-xs sm:text-sm text-white block">
+                    📂 Subir archivo .CSV o .TXT de tu Playlist
+                  </span>
+                  <span className="text-[11px] text-slate-300">
+                    Sube el archivo descargado de <strong>Exportify</strong>, <strong>TuneMyMusic</strong> o tu bloc de notas. ¡Carga 300+ canciones en 1 segundo!
+                  </span>
+                </div>
+              </div>
+
+              {/* Separador */}
+              <div className="relative flex items-center justify-center">
+                <div className="border-t border-slate-800 w-full" />
+                <span className="bg-slate-900 px-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  O pega el texto / CSV manualmente
+                </span>
+                <div className="border-t border-slate-800 w-full" />
               </div>
 
               <textarea
-                rows={7}
+                rows={6}
                 value={bulkText}
                 onChange={(e) => setBulkText(e.target.value)}
-                placeholder={`Ejemplo:\nSoda Stereo - Persiana Americana\nLuis Miguel - La Incondicional\nDaddy Yankee - Gasolina\nDuki - Givenchy`}
-                className="w-full p-4 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm font-mono focus:outline-none focus:border-amber-500"
+                placeholder={`Pega aquí el contenido de tu archivo CSV o escribe una canción por línea:\n\nArtista - Canción\nSoda Stereo - De Música Ligera\nLuis Miguel - Ahora Te Puedes Marchar\nBad Bunny - Tití Me Preguntó`}
+                className="w-full p-3.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm font-mono focus:outline-none focus:border-amber-500"
               />
 
-              {isImporting && (
-                <div className="flex items-center gap-2 text-xs text-amber-400 font-mono">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {importStatus}
+              {importStatus && (
+                <div className="flex items-center gap-2 text-xs text-emerald-400 font-bold bg-emerald-950/40 border border-emerald-500/30 p-2.5 rounded-xl">
+                  <Check className="w-4 h-4 shrink-0" />
+                  <span>{importStatus}</span>
                 </div>
               )}
 
               <button
-                onClick={handleBulkProcess}
+                type="button"
+                onClick={() => handleProcessTextOrCsv()}
                 disabled={isImporting || !bulkText.trim()}
-                className="w-full py-3 rounded-xl font-bold text-sm text-slate-950 bg-amber-400 hover:bg-amber-300 disabled:opacity-40 cursor-pointer"
+                className="w-full py-3 rounded-xl font-bold text-sm text-slate-950 bg-amber-400 hover:bg-amber-300 disabled:opacity-40 cursor-pointer transition-all shadow-lg"
               >
-                {isImporting ? 'Procesando canciones...' : 'Buscar y Agregar Todas a mi Lista'}
+                Procesar y Agregar Canciones a mi Lista
               </button>
             </div>
           )}
