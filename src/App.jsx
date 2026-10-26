@@ -30,6 +30,7 @@ import InstructionsModal from './components/InstructionsModal';
 import AudioPlayer from './components/AudioPlayer';
 import Timeline from './components/Timeline';
 import GameOverModal from './components/GameOverModal';
+import SurpriseEventModal from './components/SurpriseEventModal';
 
 import { getPlaylistById } from './services/playlistStorage';
 import { enrichTrack } from './services/musicService';
@@ -93,6 +94,9 @@ export default function App() {
   const [bonusClaimedThisTurn, setBonusClaimedThisTurn] = useState(false);
   const [cardRevokedThisTurn, setCardRevokedThisTurn] = useState(false);
   const [showStealModal, setShowStealModal] = useState(false);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [hasStartedPlayback, setHasStartedPlayback] = useState(false);
+  const [wasPassed, setWasPassed] = useState(false);
 
   const [showInstructions, setShowInstructions] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -182,12 +186,16 @@ export default function App() {
     cardRevokedThisTurn
   ]);
 
-  // Manejador del reloj de cuenta regresiva (Adrenalina)
+  // Manejador del reloj de cuenta regresiva (Adrenalina - solo corre cuando dan Play)
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
 
     if (gameState === 'playing' && turnTimerSeconds > 0 && !isRevealed) {
-      setTimeLeft(turnTimerSeconds);
+      if (!hasStartedPlayback) {
+        setTimeLeft(turnTimerSeconds);
+        return;
+      }
+
       timerRef.current = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
@@ -207,7 +215,7 @@ export default function App() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [gameState, turnTimerSeconds, currentTrack, isRevealed]);
+  }, [gameState, turnTimerSeconds, currentTrack, isRevealed, hasStartedPlayback]);
 
   const handleTimeExpired = () => {
     if (isRevealed) return;
@@ -336,6 +344,8 @@ export default function App() {
     setCardRevokedThisTurn(false);
     setHint1Active(false);
     setEliminatedSlots([]);
+    setHasStartedPlayback(false);
+    setWasPassed(false);
 
     const tCount = nextTurnCount !== null ? nextTurnCount : turnCount + 1;
     setTurnCount(tCount);
@@ -345,12 +355,14 @@ export default function App() {
     if (useEvents && tCount > 1 && tCount % 4 === 0) {
       const ev = getRandomSurpriseEvent();
       setActiveEvent(ev);
+      setShowEventModal(true);
       playEventSound();
       if (ev.freeHint) {
         setHint1Active(true);
       }
     } else {
       setActiveEvent(null);
+      setShowEventModal(false);
     }
 
     let deckToUse = [...remainingDeck];
@@ -477,6 +489,15 @@ export default function App() {
     setSelectedSlot(null);
     setEliminatedSlots([]);
     setShowStealModal(false);
+  };
+
+  // Pasar turno cuando nadie se la sabe ni nadie la quiere robar
+  const handlePassTurnWithoutGuessing = () => {
+    playErrorSound();
+    setIsRevealed(true);
+    setIsCorrect(false);
+    setSelectedSlot(null);
+    setWasPassed(true);
   };
 
   // Acción de Ficha: Saltar canción por 1 ⚡
@@ -841,11 +862,13 @@ export default function App() {
             {/* Banner de Evento Sorpresa (si está activo este turno) */}
             {activeEvent && !isRevealed && (
               <div 
-                className="w-full p-2.5 sm:p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-lg animate-pulse"
+                onClick={() => setShowEventModal(true)}
+                className="w-full p-2.5 sm:p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-lg cursor-pointer hover:brightness-110 transition-all"
                 style={{
                   backgroundColor: `${activeEvent.color}15`,
                   borderColor: `${activeEvent.color}60`
                 }}
+                title="Toca para ver el detalle completo del evento"
               >
                 <div className="flex items-center gap-2.5">
                   <div 
@@ -1048,35 +1071,51 @@ export default function App() {
               blurredArtwork={hint1Active}
               artistHint={hint1Active ? getArtistHintText() : null}
               isUrgentTimer={isUrgentTimer}
+              onPlaybackStart={() => setHasStartedPlayback(true)}
             />
 
             {/* Acciones de Revelar / Resultado y Bonus Verbal */}
-            <div className="flex flex-col items-center justify-center gap-2 my-1 w-full">
+            <div className="flex flex-col items-center justify-center gap-2.5 my-1 w-full">
               {!isRevealed ? (
-                <button
-                  onClick={handleReveal}
-                  disabled={selectedSlot === null || isEnriching || isPeekingOtherPlayer}
-                  className={`px-8 py-3 rounded-2xl font-black text-sm sm:text-base text-white shadow-xl transition-all duration-300 transform active:scale-95 disabled:opacity-40 disabled:scale-100 flex items-center gap-2 cursor-pointer ${
-                    selectedSlot !== null && !isPeekingOtherPlayer ? 'keep-white' : ''
-                  }`}
-                  style={{
-                    backgroundColor:
-                      selectedSlot !== null && !isPeekingOtherPlayer
-                        ? 'var(--color-primary)'
-                        : 'var(--color-bg-surface-elevated)',
-                    boxShadow:
-                      selectedSlot !== null && !isPeekingOtherPlayer
-                        ? 'var(--shadow-glow-primary)'
-                        : 'none'
-                  }}
-                >
-                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
-                  {isPeekingOtherPlayer
-                    ? `Viendo a ${displayedPlayer.name} (Vuelve para jugar)`
-                    : selectedSlot === null
-                    ? '1º Di qué canción es y toca una ranura [ + ]'
-                    : '¡Revelar Año y Canción!'}
-                </button>
+                <div className="flex flex-col items-center gap-2 w-full max-w-md">
+                  <button
+                    onClick={handleReveal}
+                    disabled={selectedSlot === null || isEnriching || isPeekingOtherPlayer}
+                    className={`w-full py-3 px-6 rounded-2xl font-black text-sm sm:text-base text-white shadow-xl transition-all duration-300 transform active:scale-95 disabled:opacity-40 disabled:scale-100 flex items-center justify-center gap-2 cursor-pointer ${
+                      selectedSlot !== null && !isPeekingOtherPlayer ? 'keep-white' : ''
+                    }`}
+                    style={{
+                      backgroundColor:
+                        selectedSlot !== null && !isPeekingOtherPlayer
+                          ? 'var(--color-primary)'
+                          : 'var(--color-bg-surface-elevated)',
+                      boxShadow:
+                        selectedSlot !== null && !isPeekingOtherPlayer
+                          ? 'var(--shadow-glow-primary)'
+                          : 'none'
+                    }}
+                  >
+                    <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
+                    {isPeekingOtherPlayer
+                      ? `Viendo a ${displayedPlayer.name} (Vuelve para jugar)`
+                      : selectedSlot === null
+                      ? '1º Di qué canción es y toca una ranura [ + ]'
+                      : '¡Revelar Año y Canción!'}
+                  </button>
+
+                  {/* Botón si nadie se la sabe y nadie quiere robarla */}
+                  {!isPeekingOtherPlayer && (
+                    <button
+                      type="button"
+                      onClick={handlePassTurnWithoutGuessing}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white bg-slate-900/60 hover:bg-slate-800 border border-slate-700/60 transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 shadow-sm"
+                      title="Nadie se la sabe o nadie la quiso robar. Pasa el turno a la siguiente persona"
+                    >
+                      <SkipForward className="w-3.5 h-3.5 text-slate-400" />
+                      <span>🤷‍♂️ No me la sé / Pasar Turno</span>
+                    </button>
+                  )}
+                </div>
               ) : (
                 <div className="flex flex-col items-center gap-2.5 w-full max-w-2xl">
                   <div className="flex flex-wrap items-center justify-center gap-2">
@@ -1084,6 +1123,8 @@ export default function App() {
                       className={`px-3.5 py-2 rounded-xl border flex items-center gap-2 text-xs sm:text-sm font-bold ${
                         isCorrect
                           ? 'bg-emerald-950/70 border-emerald-500/60 text-emerald-300'
+                          : wasPassed
+                          ? 'bg-slate-900/80 border-slate-700 text-slate-300'
                           : 'bg-rose-950/70 border-rose-500/60 text-rose-300'
                       }`}
                     >
@@ -1092,6 +1133,13 @@ export default function App() {
                           <Check className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
                           <span>
                             ¡Año correcto ({currentTrack.year})! Carta sumada a {currentPlayer.name}
+                          </span>
+                        </>
+                      ) : wasPassed ? (
+                        <>
+                          <span className="text-base">🤷‍♂️</span>
+                          <span>
+                            Turno pasado sin colocar. ¡Era "{currentTrack.title}" de {currentTrack.artist} ({currentTrack.year})!
                           </span>
                         </>
                       ) : (
@@ -1115,36 +1163,38 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Validación Verbal Familiar */}
-                  <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
-                    <button
-                      type="button"
-                      disabled={bonusClaimedThisTurn}
-                      onClick={handleAwardGuessBonus}
-                      className={`px-3 py-1.5 rounded-xl font-bold border flex items-center gap-1.5 transition-all cursor-pointer ${
-                        bonusClaimedThisTurn
-                          ? 'bg-amber-950/40 border-amber-500/40 text-amber-300'
-                          : 'bg-slate-800 hover:bg-slate-700 border-amber-500/40 text-amber-300'
-                      }`}
-                    >
-                      <Mic className="w-3.5 h-3.5" />
-                      {bonusClaimedThisTurn
-                        ? '¡+1 ⚡ Ficha entregada por acertar la canción!'
-                        : '¿Dijo bien Canción y Artista en voz alta? (+1 ⚡)'}
-                    </button>
-
-                    {isCorrect && !cardRevokedThisTurn && (
+                  {/* Validación Verbal Familiar (solo si no fue turno pasado) */}
+                  {!wasPassed && (
+                    <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
                       <button
                         type="button"
-                        onClick={handleRevokeCardForNotKnowingSong}
-                        className="px-3 py-1.5 rounded-xl font-semibold bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/50 text-rose-300 flex items-center gap-1 cursor-pointer"
-                        title="Toca aquí si la regla familiar exige adivinar la canción para quedársela"
+                        disabled={bonusClaimedThisTurn}
+                        onClick={handleAwardGuessBonus}
+                        className={`px-3 py-1.5 rounded-xl font-bold border flex items-center gap-1.5 transition-all cursor-pointer ${
+                          bonusClaimedThisTurn
+                            ? 'bg-amber-950/40 border-amber-500/40 text-amber-300'
+                            : 'bg-slate-800 hover:bg-slate-700 border-amber-500/40 text-amber-300'
+                        }`}
                       >
-                        <Undo2 className="w-3.5 h-3.5" />
-                        No se supo la canción (Quitar carta)
+                        <Mic className="w-3.5 h-3.5" />
+                        {bonusClaimedThisTurn
+                          ? '¡+1 ⚡ Ficha entregada por acertar la canción!'
+                          : '¿Dijo bien Canción y Artista en voz alta? (+1 ⚡)'}
                       </button>
-                    )}
-                  </div>
+
+                      {isCorrect && !cardRevokedThisTurn && (
+                        <button
+                          type="button"
+                          onClick={handleRevokeCardForNotKnowingSong}
+                          className="px-3 py-1.5 rounded-xl font-semibold bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/50 text-rose-300 flex items-center gap-1 cursor-pointer"
+                          title="Toca aquí si la regla familiar exige adivinar la canción para quedársela"
+                        >
+                          <Undo2 className="w-3.5 h-3.5" />
+                          No se supo la canción (Quitar carta)
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1239,6 +1289,17 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal Emergente de Evento Sorpresa (Alerta a todos los jugadores) */}
+      {showEventModal && activeEvent && (
+        <SurpriseEventModal
+          event={activeEvent}
+          turnCount={turnCount}
+          currentPlayer={currentPlayer}
+          onClose={() => setShowEventModal(false)}
+          onReroll={handleChangeEvent}
+        />
       )}
 
       {/* Modal de Instrucciones de Juego */}

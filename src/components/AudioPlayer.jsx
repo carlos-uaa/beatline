@@ -11,7 +11,8 @@ export default function AudioPlayer({
   maxDuration = null, // Para el evento "Intro Relámpago (5s)"
   blurredArtwork = false, // Para Pista 1 comodín
   artistHint = null, // Ej. "D... (2020s)"
-  isUrgentTimer = false // Parpadeo cuando quedan <= 10s
+  isUrgentTimer = false, // Parpadeo cuando quedan <= 10s
+  onPlaybackStart = null // Callback cuando inicia la reproducción para activar timer
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -30,14 +31,7 @@ export default function AudioPlayer({
       audioRef.current.currentTime = 0;
       if (audioUrl) {
         audioRef.current.load();
-        const playPromise = audioRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => setIsPlaying(true))
-            .catch(() => {
-              setIsPlaying(false);
-            });
-        }
+        // Iniciar pausado por defecto para evitar spoilers mientras debaten o pasan la tablet
       }
     }
   }, [audioUrl]);
@@ -51,7 +45,10 @@ export default function AudioPlayer({
     } else {
       audioRef.current
         .play()
-        .then(() => setIsPlaying(true))
+        .then(() => {
+          setIsPlaying(true);
+          if (onPlaybackStart) onPlaybackStart();
+        })
         .catch(() => {
           setIsPlaying(false);
         });
@@ -61,7 +58,10 @@ export default function AudioPlayer({
   const handleRestart = () => {
     if (!audioRef.current) return;
     audioRef.current.currentTime = 0;
-    audioRef.current.play().then(() => setIsPlaying(true));
+    audioRef.current.play().then(() => {
+      setIsPlaying(true);
+      if (onPlaybackStart) onPlaybackStart();
+    });
   };
 
   const toggleMute = () => {
@@ -193,6 +193,31 @@ export default function AudioPlayer({
           {isPlaying ? <Pause className="w-5 h-5 fill-white" /> : <Play className="w-5 h-5 fill-white ml-0.5" />}
         </button>
       </div>
+
+      {/* Botón táctil para reproducir manualmente sin spoiler */}
+      {!isRevealed && (
+        <button
+          type="button"
+          onClick={togglePlay}
+          className={`mt-2 px-5 py-2 rounded-full font-black text-xs sm:text-sm flex items-center gap-2 shadow-xl transition-all transform active:scale-95 cursor-pointer ${
+            isPlaying
+              ? 'bg-slate-800 text-slate-300 hover:text-white border border-slate-700'
+              : 'bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 text-white hover:brightness-110 shadow-violet-500/30 animate-pulse'
+          }`}
+        >
+          {isPlaying ? (
+            <>
+              <Pause className="w-4 h-4 fill-current" />
+              <span>Pausar Música</span>
+            </>
+          ) : (
+            <>
+              <Play className="w-4 h-4 fill-white ml-0.5" />
+              <span>▶️ Reproducir Canción</span>
+            </>
+          )}
+        </button>
+      )}
 
       {/* Pista textual de artista si está activa (Pista 1 o evento gratis) */}
       {!isRevealed && artistHint && (
