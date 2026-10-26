@@ -61,6 +61,46 @@ export const SURPRISE_EVENTS = [
     description: 'Si el jugador en turno no se sabe la canción, cualquier otro familiar puede robarla por solo 0.5 ⚡ Fichas.',
     color: '#f43f5e',
     stealDiscount: 0.5
+  },
+  {
+    id: 'lluvia-fichas',
+    title: '🌧️ Lluvia de Fichas (Regalo Familiar)',
+    badge: '+1 ⚡ Para Todos',
+    description: '¡Celebración en la mesa! Al activarse este evento, ¡TODOS los jugadores reciben de inmediato +1 ⚡ Ficha de regalo!',
+    color: '#38bdf8',
+    allGetTokens: 1
+  },
+  {
+    id: 'salto-temporal',
+    title: '⏳ Salto Temporal (Pista 2 Gratis)',
+    badge: 'Pista 2 Gratis',
+    description: '¡La tablet te regala la Pista 2 sin costo! Se descartan automáticamente la mitad de las ranuras incorrectas de tu tablero.',
+    color: '#14b8a6',
+    freeSlotElimination: true
+  },
+  {
+    id: 'ano-exacto',
+    title: '🎯 Apuesta de Año Exacto (+2 ⚡ Extra)',
+    badge: 'Bono +2 ⚡',
+    description: 'Si colocas la canción en la ranura correcta y además dices en voz alta el AÑO EXACTO antes de revelar, ¡te llevas la carta + 2 ⚡ Fichas extra!',
+    color: '#a855f7',
+    exactYearBonus: 2
+  },
+  {
+    id: 'segunda-oportunidad',
+    title: '🔄 Segunda Oportunidad (Reintento)',
+    badge: 'Reintento Gratis',
+    description: '¡Tienes salvavidas! Si fallas tu primer intento al ubicar la ranura, la tablet te dará un segundo intento inmediato.',
+    color: '#22c55e',
+    secondChance: true
+  },
+  {
+    id: 'duo-solidario',
+    title: '🤝 Dúo Musical (Pase Solidario)',
+    badge: 'Trabajo en Equipo',
+    description: '¡Puedes consultar y pedir ayuda a otro familiar! Si entre los dos la colocan bien, ambos ganan +0.5 ⚡ Fichas.',
+    color: '#f59e0b',
+    duoBonus: 0.5
   }
 ];
 

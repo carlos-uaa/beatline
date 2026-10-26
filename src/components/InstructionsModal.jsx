@@ -186,10 +186,10 @@ export default function InstructionsModal({ isOpen, onClose }) {
               <div className="p-3.5 rounded-xl border bg-pink-950/30 border-pink-700/40">
                 <h3 className="font-bold text-pink-300 text-sm sm:text-base mb-1 flex items-center gap-2">
                   <Dices className="w-4 h-4 text-pink-400" />
-                  Giros de Tuerca y Eventos Sorpresa (Cada 4 turnos)
+                  Giros de Tuerca y Eventos Sorpresa (Probabilidad Configurable)
                 </h3>
                 <p className="text-slate-300 text-xs">
-                  Para que nadie se confíe aunque lleve ventaja, cada 4 turnos se activa un giro aleatorio. Si te parece muy difícil, puedes tocar <strong>"Cambiar Evento (1 ⚡)"</strong>.
+                  Para que nadie se confíe aunque lleve ventaja, cada turno tiene una probabilidad configurable (por defecto 20%, ~1 de cada 5 rondas) de activar un evento sorpresa. Si te parece muy difícil, puedes tocar <strong>"Cambiar Evento (1 ⚡)"</strong>.
                 </p>
               </div>
 
@@ -215,8 +215,28 @@ export default function InstructionsModal({ isOpen, onClose }) {
                   <p className="text-slate-400">La tablet te obsequia la Pista 1 (Artista + Portada) gratis.</p>
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700">
-                  <strong className="text-rose-400 block mb-0.5">🕵️ Robo a Mitad de Precio</strong>
+                  <strong className="text-rose-400 block mb-0.5">🕵️ Robo con Descuento</strong>
                   <p className="text-slate-400">Robar esta canción solo cuesta 0.5 ⚡ fichas.</p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700">
+                  <strong className="text-sky-400 block mb-0.5">🌧️ Lluvia de Fichas</strong>
+                  <p className="text-slate-400">¡Ronda solidaria! Todos los jugadores reciben +1 ⚡ Ficha.</p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700">
+                  <strong className="text-teal-400 block mb-0.5">⏳ Salto Temporal</strong>
+                  <p className="text-slate-400">Pista 2 gratis: se descartan el 50% de las ranuras erróneas.</p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700">
+                  <strong className="text-purple-400 block mb-0.5">🎯 Año Exacto (+2 ⚡)</strong>
+                  <p className="text-slate-400">Si además de la ranura dices el año exacto, ganas +2 ⚡.</p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700">
+                  <strong className="text-green-400 block mb-0.5">🔄 Segunda Oportunidad</strong>
+                  <p className="text-slate-400">Si fallas la ranura en el 1º intento, tienes un 2º intento gratis.</p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700">
+                  <strong className="text-amber-400 block mb-0.5">🤝 Dúo Musical</strong>
+                  <p className="text-slate-400">Pide ayuda a otro jugador; si aciertan, ambos ganan +0.5 ⚡.</p>
                 </div>
               </div>
             </div>

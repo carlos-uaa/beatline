@@ -63,11 +63,15 @@ export default function App() {
   const [difficulty, setDifficulty] = useState('classic'); // 'classic' | 'relaxed' | 'expert'
   const [turnTimerSeconds, setTurnTimerSeconds] = useState(0); // 0 (sin límite)
   const [enableEvents, setEnableEvents] = useState(true);
+  const [eventProbability, setEventProbability] = useState(20); // 20% por defecto
   const [targetCards, setTargetCards] = useState(10);
   const [turnCount, setTurnCount] = useState(1);
 
   // Evento sorpresa del turno actual
   const [activeEvent, setActiveEvent] = useState(null);
+  const [hasUsedSecondChance, setHasUsedSecondChance] = useState(false);
+  const [secondChanceActive, setSecondChanceActive] = useState(false);
+  const [exactYearBonusClaimed, setExactYearBonusClaimed] = useState(false);
 
   // Pistas comodín activadas en el turno actual
   const [hint1Active, setHint1Active] = useState(false); // Portada desenfocada + Artista
@@ -142,6 +146,7 @@ export default function App() {
         difficulty,
         turnTimerSeconds,
         enableEvents,
+        eventProbability,
         turnCount,
         activeEvent,
         hint1Active,
@@ -239,6 +244,7 @@ export default function App() {
       setDifficulty(saved.difficulty || 'classic');
       setTurnTimerSeconds(saved.turnTimerSeconds || 0);
       setEnableEvents(saved.enableEvents !== undefined ? saved.enableEvents : true);
+      setEventProbability(saved.eventProbability !== undefined ? saved.eventProbability : 20);
       setTurnCount(saved.turnCount || 1);
       setActiveEvent(saved.activeEvent || null);
       setHint1Active(saved.hint1Active || false);
@@ -282,6 +288,7 @@ export default function App() {
     difficulty: diff,
     turnTimerSeconds: timerSec,
     enableEvents: eventsOn,
+    eventProbability: prob = 20,
     playlistId
   }) => {
     const chosenPlaylist = getPlaylistById(playlistId);
@@ -290,6 +297,7 @@ export default function App() {
     setDifficulty(diff);
     setTurnTimerSeconds(timerSec);
     setEnableEvents(eventsOn);
+    setEventProbability(prob);
     setTurnCount(1);
 
     const shuffled = shuffleDeck(chosenPlaylist.tracks);
@@ -323,7 +331,7 @@ export default function App() {
     setWinner(null);
     clearGameSession();
 
-    await prepareNextTurn(currentDeck, 0, chosenPlaylist, 1, eventsOn);
+    await prepareNextTurn(currentDeck, 0, chosenPlaylist, 1, eventsOn, prob);
   };
 
   // Preparar el siguiente turno
@@ -332,7 +340,8 @@ export default function App() {
     nextPlayerIndex,
     playlistObj = null,
     nextTurnCount = null,
-    eventsEnabled = null
+    eventsEnabled = null,
+    probParam = null
   ) => {
     setSelectedSlot(null);
     setIsRevealed(false);
@@ -346,19 +355,35 @@ export default function App() {
     setEliminatedSlots([]);
     setHasStartedPlayback(false);
     setWasPassed(false);
+    setHasUsedSecondChance(false);
+    setSecondChanceActive(false);
+    setExactYearBonusClaimed(false);
 
     const tCount = nextTurnCount !== null ? nextTurnCount : turnCount + 1;
     setTurnCount(tCount);
 
     const useEvents = eventsEnabled !== null ? eventsEnabled : enableEvents;
-    // Activar Evento Sorpresa cada 4 turnos si están habilitados
-    if (useEvents && tCount > 1 && tCount % 4 === 0) {
-      const ev = getRandomSurpriseEvent();
-      setActiveEvent(ev);
+    const prob = probParam !== null ? probParam : eventProbability;
+
+    // Probabilidad configurable turno a turno (por defecto 20%)
+    const shouldTriggerEvent = useEvents && prob > 0 && Math.random() * 100 < prob;
+
+    let selectedEv = null;
+    if (shouldTriggerEvent) {
+      selectedEv = getRandomSurpriseEvent();
+      setActiveEvent(selectedEv);
       setShowEventModal(true);
       playEventSound();
-      if (ev.freeHint) {
+      if (selectedEv.freeHint) {
         setHint1Active(true);
+      }
+      if (selectedEv.allGetTokens) {
+        setPlayers((prev) =>
+          prev.map((p) => ({
+            ...p,
+            tokens: Math.min(5, (p.tokens || 0) + selectedEv.allGetTokens)
+          }))
+        );
       }
     } else {
       setActiveEvent(null);
@@ -379,6 +404,25 @@ export default function App() {
     const enriched = await enrichTrack(nextTrack);
     setCurrentTrack(enriched);
     setIsEnriching(false);
+
+    // Si el evento otorga Pista 2 Gratis (descarte de 50% de ranuras erróneas)
+    if (selectedEv?.freeSlotElimination) {
+      const activeP = players[nextPlayerIndex];
+      const pCards = activeP?.cards || [];
+      const totalSlots = pCards.length + 1;
+      if (totalSlots >= 3) {
+        let correctIdx = 0;
+        while (correctIdx < pCards.length && pCards[correctIdx].year <= enriched.year) {
+          correctIdx++;
+        }
+        const wrongSlots = [];
+        for (let i = 0; i < totalSlots; i++) {
+          if (i !== correctIdx) wrongSlots.push(i);
+        }
+        const count = Math.floor(wrongSlots.length / 2);
+        setEliminatedSlots(shuffleDeck(wrongSlots).slice(0, count));
+      }
+    }
   };
 
   const effectivePlayerIndex =
@@ -605,9 +649,19 @@ export default function App() {
       realIndex++;
     }
 
+    // Si falló pero tiene el evento de Segunda Oportunidad intacto
+    if (!valid && activeEvent?.secondChance && !hasUsedSecondChance) {
+      playErrorSound();
+      setHasUsedSecondChance(true);
+      setSecondChanceActive(true);
+      setSelectedSlot(null);
+      return;
+    }
+
     setIsCorrect(valid);
     setCorrectSlotIndex(realIndex);
     setIsRevealed(true);
+    setSecondChanceActive(false);
 
     const updatedPlayers = [...players];
     const prevStats = currentPlayer.stats || { attempts: 0, hits: 0, steals: 0, hintsUsed: 0 };
@@ -637,10 +691,13 @@ export default function App() {
         }
       }
 
-      // Bonus de fichas por evento
+      // Bonus de fichas por evento (Fiebre de fichas o Dúo musical)
       let tokenReward = currentPlayer.tokens || 0;
       if (activeEvent?.bonusToken) {
         tokenReward = Math.min(5, tokenReward + activeEvent.bonusToken);
+      }
+      if (activeEvent?.duoBonus) {
+        tokenReward = Math.min(5, tokenReward + activeEvent.duoBonus);
       }
 
       updatedPlayers[effectivePlayerIndex] = {
@@ -714,6 +771,20 @@ export default function App() {
     };
     setPlayers(updatedPlayers);
     setBonusClaimedThisTurn(true);
+  };
+
+  // Premiar con +2 Fichas por acertar el Año Exacto en el evento correspondiente
+  const handleAwardExactYearBonus = () => {
+    if (exactYearBonusClaimed || !activeEvent?.exactYearBonus) return;
+    playTokenSound();
+    const updatedPlayers = [...players];
+    const currentTokens = currentPlayer.tokens || 0;
+    updatedPlayers[effectivePlayerIndex] = {
+      ...currentPlayer,
+      tokens: Math.min(5, currentTokens + activeEvent.exactYearBonus)
+    };
+    setPlayers(updatedPlayers);
+    setExactYearBonusClaimed(true);
   };
 
   // Anular carta si juegan con regla estricta y no supo la canción
@@ -1078,6 +1149,13 @@ export default function App() {
             <div className="flex flex-col items-center justify-center gap-2.5 my-1 w-full">
               {!isRevealed ? (
                 <div className="flex flex-col items-center gap-2 w-full max-w-md">
+                  {secondChanceActive && (
+                    <div className="w-full p-2.5 rounded-2xl bg-emerald-950/80 border border-emerald-500/70 text-emerald-300 text-xs font-bold flex items-center justify-center gap-2 animate-pulse shadow-lg">
+                      <RefreshCw className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>¡Segunda Oportunidad! Esa ranura era incorrecta. Toca otra ranura [ + ] para tu 2º intento gratis.</span>
+                    </div>
+                  )}
+
                   <button
                     onClick={handleReveal}
                     disabled={selectedSlot === null || isEnriching || isPeekingOtherPlayer}
@@ -1191,6 +1269,24 @@ export default function App() {
                         >
                           <Undo2 className="w-3.5 h-3.5" />
                           No se supo la canción (Quitar carta)
+                        </button>
+                      )}
+
+                      {activeEvent?.exactYearBonus && isCorrect && !cardRevokedThisTurn && (
+                        <button
+                          type="button"
+                          disabled={exactYearBonusClaimed}
+                          onClick={handleAwardExactYearBonus}
+                          className={`px-3 py-1.5 rounded-xl font-bold border flex items-center gap-1.5 transition-all cursor-pointer ${
+                            exactYearBonusClaimed
+                              ? 'bg-purple-950/40 border-purple-500/40 text-purple-300'
+                              : 'bg-slate-800 hover:bg-slate-700 border-purple-500/40 text-purple-300'
+                          }`}
+                        >
+                          <Trophy className="w-3.5 h-3.5 text-purple-400" />
+                          {exactYearBonusClaimed
+                            ? `¡+${activeEvent.exactYearBonus} ⚡ Entregadas por Año Exacto!`
+                            : `¿Dijo el año exacto (${currentTrack.year})? (+${activeEvent.exactYearBonus} ⚡)`}
                         </button>
                       )}
                     </div>
@@ -1322,6 +1418,7 @@ export default function App() {
               difficulty,
               turnTimerSeconds,
               enableEvents,
+              eventProbability,
               playlistId: activePlaylistId
             })
           }

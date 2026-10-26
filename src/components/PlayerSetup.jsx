@@ -23,7 +23,7 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
   const [targetCards, setTargetCards] = useState(10);
   const [difficulty, setDifficulty] = useState('classic'); // 'classic' | 'relaxed' | 'expert'
   const [turnTimerSeconds, setTurnTimerSeconds] = useState(0); // 0 (sin límite), 30, 45, 60
-  const [enableEvents, setEnableEvents] = useState(true);
+  const [eventProbability, setEventProbability] = useState(20); // Probabilidad de eventos sorpresa (por defecto 20%)
 
   const [playlists, setPlaylists] = useState([]);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState('mix-completo');
@@ -82,7 +82,8 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
       targetCards,
       difficulty,
       turnTimerSeconds,
-      enableEvents,
+      enableEvents: eventProbability > 0,
+      eventProbability,
       playlistId: selectedPlaylistId
     });
   };
@@ -290,32 +291,73 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
           </div>
         </div>
 
-        {/* Interruptor de Eventos Sorpresa */}
-        <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-pink-500/15 text-pink-400">
-              <Dices className="w-4 h-4" />
+        {/* Selector de Probabilidad de Eventos Sorpresa */}
+        <div className="pt-3 border-t border-slate-800 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-pink-500/15 text-pink-400">
+                <Dices className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-white block">
+                  🎲 Probabilidad de Eventos Sorpresa
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  {eventProbability === 0
+                    ? 'Desactivados (Partida clásica sin cartas de evento)'
+                    : `Cada turno tiene un ${eventProbability}% de posibilidades de activar un giro sorpresa.`}
+                </span>
+              </div>
             </div>
-            <div>
-              <span className="text-xs font-bold text-white block">
-                🎲 Giros de Tuerca y Eventos Sorpresa
-              </span>
-              <span className="text-[10px] text-slate-400">
-                Activa retos especiales cada 4 turnos (Doble o Nada, Intro de 5s, Duelos)
-              </span>
-            </div>
+            <span
+              className={`px-3 py-1 rounded-xl text-xs font-black font-mono border ${
+                eventProbability === 0
+                  ? 'bg-slate-900 border-slate-700 text-slate-500'
+                  : 'bg-pink-950/60 border-pink-500/50 text-pink-300'
+              }`}
+            >
+              {eventProbability === 0 ? '0% (Apagado)' : `${eventProbability}%`}
+            </span>
           </div>
-          <button
-            type="button"
-            onClick={() => setEnableEvents(!enableEvents)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              enableEvents 
-                ? 'bg-pink-600 text-white shadow-md' 
-                : 'bg-slate-800 text-slate-500 border border-slate-700'
-            }`}
-          >
-            {enableEvents ? 'Activados ⚡' : 'Desactivados'}
-          </button>
+
+          {/* Botones de acceso rápido */}
+          <div className="grid grid-cols-5 gap-1.5">
+            {[
+              { val: 0, label: '0%' },
+              { val: 10, label: '10%' },
+              { val: 20, label: '20% ⭐' },
+              { val: 35, label: '35%' },
+              { val: 50, label: '50% 🔥' }
+            ].map(({ val, label }) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setEventProbability(val)}
+                className={`py-1.5 px-1 rounded-xl text-xs font-bold border transition-all text-center cursor-pointer ${
+                  eventProbability === val
+                    ? 'bg-pink-600 border-pink-400 text-white font-black shadow-md'
+                    : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Slider para ajuste fino de 0% a 100% */}
+          <div className="flex items-center gap-3 pt-1">
+            <span className="text-[10px] text-slate-500 font-bold">0%</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={eventProbability}
+              onChange={(e) => setEventProbability(Number(e.target.value))}
+              className="w-full accent-pink-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+            />
+            <span className="text-[10px] text-slate-500 font-bold">100%</span>
+          </div>
         </div>
       </div>
 
