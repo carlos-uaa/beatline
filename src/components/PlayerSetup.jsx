@@ -9,12 +9,13 @@ import {
   Music2, 
   Clock, 
   Dices, 
-  ShieldCheck 
+  ShieldCheck,
+  Play
 } from 'lucide-react';
 import { getAllPlaylists, deleteCustomPlaylist } from '../services/playlistStorage';
 import PlaylistCreatorModal from './PlaylistCreatorModal';
 
-export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame }) {
+export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, onDiscardGame }) {
   const [players, setPlayers] = useState([
     { id: 1, name: 'Jugador 1', cards: [], score: 0, tokens: 2 },
     { id: 2, name: 'Jugador 2', cards: [], score: 0, tokens: 2 }
@@ -25,7 +26,7 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame })
   const [enableEvents, setEnableEvents] = useState(true);
 
   const [playlists, setPlaylists] = useState([]);
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState('aniversario-papas');
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState('mix-completo');
   const [showCreator, setShowCreator] = useState(false);
 
   useEffect(() => {
@@ -91,7 +92,7 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame })
       {/* Banner de partida recuperada si existe */}
       {hasSavedGame && (
         <div
-          className="p-3.5 sm:p-4 rounded-2xl border flex items-center justify-between gap-4 shadow-lg"
+          className="p-3.5 sm:p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 shadow-lg animate-fadeIn"
           style={{
             backgroundColor: 'var(--color-bg-surface-elevated)',
             borderColor: 'var(--color-accent)'
@@ -102,17 +103,30 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame })
               <Sparkles className="w-4 h-4 text-amber-400" />
               ¡Partida en curso detectada!
             </h4>
-            <p className="text-[11px] sm:text-xs text-slate-300">
-              Tu partida anterior sigue guardada intacta por si recargaron por error.
+            <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5">
+              Hay una sesión previa guardada intacta por si recargaron por error.
             </p>
           </div>
-          <button
-            onClick={onResumeGame}
-            className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-950 transition-transform active:scale-95 shadow-md shrink-0 cursor-pointer"
-            style={{ backgroundColor: 'var(--color-accent)' }}
-          >
-            Reanudar Partida
-          </button>
+          <div className="flex items-center gap-2 justify-end shrink-0">
+            <button
+              type="button"
+              onClick={onDiscardGame}
+              className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-300 hover:text-white bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+              title="Borrar la partida guardada y empezar de cero"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Descartar</span>
+            </button>
+            <button
+              type="button"
+              onClick={onResumeGame}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-950 transition-transform active:scale-95 shadow-md cursor-pointer flex items-center gap-1.5"
+              style={{ backgroundColor: 'var(--color-accent)' }}
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>Reanudar Partida</span>
+            </button>
+          </div>
         </div>
       )}
 

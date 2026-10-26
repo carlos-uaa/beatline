@@ -1,14 +1,14 @@
-import { ANIVERSARIO_PAPAS_TRACKS } from '../data/aniversarioPapas';
+import { MIX_COMPLETO_TRACKS } from '../data/mixCompleto';
 
 const CUSTOM_PLAYLISTS_KEY = 'beatline_custom_playlists_v1';
 
-// Playlist Principal Oficial (Aniversario Papás)
+// Playlist Principal Oficial (Mix Completo con todas las canciones)
 export const DEFAULT_MAIN_PLAYLIST = {
-  id: 'aniversario-papas',
-  title: 'Aniversario Papás 🎵',
-  description: 'Lista familiar con éxitos de pop, urbano, reggaetón y clásicos inolvidables.',
+  id: 'mix-completo',
+  title: 'Mix Completo 🎵',
+  description: 'Lista completa con más de 240 canciones: pop, reggaetón, clásicos, urbano y éxitos inolvidables.',
   cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80',
-  tracks: ANIVERSARIO_PAPAS_TRACKS
+  tracks: MIX_COMPLETO_TRACKS
 };
 
 export const DEFAULT_PLAYLISTS = [
@@ -54,5 +54,5 @@ export function getAllPlaylists() {
 
 export function getPlaylistById(id) {
   const all = getAllPlaylists();
-  return all.find((p) => p.id === id) || DEFAULT_MAIN_PLAYLIST;
+  return all.find((p) => p.id === id) || all.find((p) => p.id === 'mix-completo') || DEFAULT_MAIN_PLAYLIST;
 }

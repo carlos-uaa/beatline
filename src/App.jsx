@@ -55,8 +55,8 @@ export default function App() {
   const [activePlayerIndex, setActivePlayerIndex] = useState(0);
   const [stealingPlayerIndex, setStealingPlayerIndex] = useState(null);
   const [viewingPlayerIndex, setViewingPlayerIndex] = useState(null);
-  const [playlistTitle, setPlaylistTitle] = useState('Aniversario Papás 🎵');
-  const [activePlaylistId, setActivePlaylistId] = useState('aniversario-papas');
+  const [playlistTitle, setPlaylistTitle] = useState('Mix Completo 🎵');
+  const [activePlaylistId, setActivePlaylistId] = useState('mix-completo');
 
   // Parámetros de juego
   const [difficulty, setDifficulty] = useState('classic'); // 'classic' | 'relaxed' | 'expert'
@@ -249,6 +249,12 @@ export default function App() {
       setGameState('playing');
       setHasSavedGame(false);
     }
+  };
+
+  // Descartar partida guardada previa
+  const handleDiscardSavedGame = () => {
+    clearGameSession();
+    setHasSavedGame(false);
   };
 
   // Barajar array (Fisher-Yates)
@@ -825,6 +831,7 @@ export default function App() {
             onStartGame={handleStartGame}
             hasSavedGame={hasSavedGame}
             onResumeGame={handleResumeGame}
+            onDiscardGame={handleDiscardSavedGame}
           />
         )}
 
