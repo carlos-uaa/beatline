@@ -11,7 +11,7 @@
 * 🎨 **Sistema de Diseño Tokenizado (`src/index.css`):** Todas las variables visuales (colores primarios, secundarios, éxito, error, superficies, textos, bordes, radios y sombras) están centralizadas mediante CSS Custom Properties para permitir un cambio de tema o estilo inmediato.
 * 🎧 **Motor de Audio en Alta Definición:** Integra consultas dinámicas y legales de 30 segundos mediante iTunes Search API, resolviendo carátulas en alta definición y años oficiales sin necesidad de autenticación ni costos de suscripción.
 * 📖 **Manual de Instrucciones Integrado:** Pestañas visuales explicativas accesibles en cualquier momento sin pausar ni romper la partida.
-* 🇦🇷 **Paquete de Lanzamiento:** *Urbano Argentino (2017 - 2024)*, con canciones desde las plazas del Quinto Escalón y los primeros hits de Duki y Paulo Londra hasta las Bizarrap Music Sessions, WOS, Milo J y Trueno.
+* 🎵 **Paquete Oficial de Lanzamiento:** *Aniversario Papás 🎵*, con una selección de 100 éxitos para todas las generaciones, además de soporte para crear o importar cualquier playlist de Spotify o personalizada.
 
 ---
 

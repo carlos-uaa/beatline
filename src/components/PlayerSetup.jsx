@@ -25,7 +25,7 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame })
   const [enableEvents, setEnableEvents] = useState(true);
 
   const [playlists, setPlaylists] = useState([]);
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState('urbano-argentina');
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState('aniversario-papas');
   const [showCreator, setShowCreator] = useState(false);
 
   useEffect(() => {

@@ -112,9 +112,7 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
     setIsImporting(true);
     setErrorMsg('');
     try {
-      const imported = await importSpotifyPlaylist(spotifyUrl, (curr, total, name) => {
-        setImportStatus(`Importando canción (${curr}/${total}): ${name}`);
-      });
+      const imported = await importSpotifyPlaylist(spotifyUrl);
       saveCustomPlaylist(imported);
       stopPreview();
       onPlaylistCreated(imported);
@@ -147,7 +145,7 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
     }
   };
 
-  const handleBulkProcess = async () => {
+  const handleBulkProcess = () => {
     const lines = bulkText
       .split('\n')
       .map((l) => l.trim())
@@ -155,38 +153,21 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
 
     if (lines.length === 0) return;
 
-    setIsImporting(true);
     setErrorMsg('');
-    const resolved = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      setImportStatus(`Buscando canción (${i + 1}/${lines.length}): ${line}`);
+    const resolved = lines.map((line, i) => {
       const parts = line.split('-').map((s) => s.trim());
-      const artist = parts.length > 1 ? parts[0] : '';
+      const artist = parts.length > 1 ? parts[0] : 'Artista';
       const songTitle = parts.length > 1 ? parts.slice(1).join(' - ') : line;
-
-      const enriched = await enrichTrack({
+      return {
         id: `bulk-${Date.now()}-${i}`,
-        artist: artist || songTitle,
         title: songTitle,
+        artist: artist,
         searchTerm: line
-      });
-
-      resolved.push({
-        id: `bulk-${Date.now()}-${i}`,
-        title: enriched.resolvedTitle || songTitle,
-        artist: enriched.resolvedArtist || artist || 'Artista',
-        year: enriched.year || 2020,
-        artwork: enriched.artwork,
-        searchTerm: line
-      });
-    }
+      };
+    });
 
     setTracks((prev) => [...prev, ...resolved]);
     setBulkText('');
-    setIsImporting(false);
-    setImportStatus('');
     setMode('search');
   };
 

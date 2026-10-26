@@ -55,8 +55,8 @@ export default function App() {
   const [activePlayerIndex, setActivePlayerIndex] = useState(0);
   const [stealingPlayerIndex, setStealingPlayerIndex] = useState(null);
   const [viewingPlayerIndex, setViewingPlayerIndex] = useState(null);
-  const [playlistTitle, setPlaylistTitle] = useState('Urbano Argentino 🇦🇷');
-  const [activePlaylistId, setActivePlaylistId] = useState('urbano-argentina');
+  const [playlistTitle, setPlaylistTitle] = useState('Aniversario Papás 🎵');
+  const [activePlaylistId, setActivePlaylistId] = useState('aniversario-papas');
 
   // Parámetros de juego
   const [difficulty, setDifficulty] = useState('classic'); // 'classic' | 'relaxed' | 'expert'
@@ -756,7 +756,7 @@ export default function App() {
               )}
             </div>
             <span className="text-[10px] font-semibold text-slate-400 block -mt-0.5 font-mono truncate max-w-[140px] sm:max-w-xs">
-              {playlistTitle}
+              {gameState === 'playing' ? playlistTitle : 'La Línea del Tiempo Musical'}
             </span>
           </div>
         </div>
