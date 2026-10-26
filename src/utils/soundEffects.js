@@ -1,6 +1,6 @@
 /**
  * Efectos de sonido sintetizados mediante Web Audio API (sin archivos pesados externos)
- * Proporciona retroalimentación auditiva inmediata al acertar, fallar, ganar fichas o robar turno.
+ * Proporciona retroalimentación auditiva inmediata al acertar, fallar, ganar fichas, reloj o eventos.
  */
 
 let audioCtx = null;
@@ -104,6 +104,48 @@ export function playTokenSound() {
       gain.connect(ctx.destination);
       osc.start(startTime);
       osc.stop(startTime + 0.22);
+    });
+  } catch {}
+}
+
+export function playTickSound(isUrgent = false) {
+  try {
+    const ctx = getContext();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(isUrgent ? 950 : 700, ctx.currentTime);
+
+    gain.gain.setValueAtTime(isUrgent ? 0.09 : 0.05, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.045);
+  } catch {}
+}
+
+export function playEventSound() {
+  try {
+    const ctx = getContext();
+    if (!ctx) return;
+    const notes = [440, 554.37, 659.25, 880];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      const startTime = ctx.currentTime + i * 0.06;
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      gain.gain.setValueAtTime(0.14, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.25);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(startTime);
+      osc.stop(startTime + 0.26);
     });
   } catch {}
 }

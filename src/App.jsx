@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   BookOpen,
   RotateCcw,
@@ -17,7 +17,11 @@ import {
   Infinity as InfinityIcon,
   Eye,
   Sun,
-  Moon
+  Moon,
+  Clock,
+  Lightbulb,
+  Dices,
+  RefreshCw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -39,8 +43,11 @@ import {
   playSlotSelectSound,
   playSuccessSound,
   playErrorSound,
-  playTokenSound
+  playTokenSound,
+  playTickSound,
+  playEventSound
 } from './utils/soundEffects';
+import { getRandomSurpriseEvent } from './data/surpriseEvents';
 
 export default function App() {
   const [gameState, setGameState] = useState('setup'); // 'setup' | 'playing' | 'gameover'
@@ -51,6 +58,24 @@ export default function App() {
   const [playlistTitle, setPlaylistTitle] = useState('Urbano Argentino 🇦🇷');
   const [activePlaylistId, setActivePlaylistId] = useState('urbano-argentina');
 
+  // Parámetros de juego
+  const [difficulty, setDifficulty] = useState('classic'); // 'classic' | 'relaxed' | 'expert'
+  const [turnTimerSeconds, setTurnTimerSeconds] = useState(0); // 0 (sin límite)
+  const [enableEvents, setEnableEvents] = useState(true);
+  const [targetCards, setTargetCards] = useState(10);
+  const [turnCount, setTurnCount] = useState(1);
+
+  // Evento sorpresa del turno actual
+  const [activeEvent, setActiveEvent] = useState(null);
+
+  // Pistas comodín activadas en el turno actual
+  const [hint1Active, setHint1Active] = useState(false); // Portada desenfocada + Artista
+  const [eliminatedSlots, setEliminatedSlots] = useState([]); // Ranuras descartadas por Pista 2
+
+  // Temporizador de Adrenalina
+  const [timeLeft, setTimeLeft] = useState(0);
+  const timerRef = useRef(null);
+
   const [deck, setDeck] = useState([]);
   const [currentTrack, setCurrentTrack] = useState(null);
   const [isEnriching, setIsEnriching] = useState(false);
@@ -58,10 +83,9 @@ export default function App() {
   const [isRevealed, setIsRevealed] = useState(false);
   const [isCorrect, setIsCorrect] = useState(null);
   const [correctSlotIndex, setCorrectSlotIndex] = useState(null);
-  const [targetCards, setTargetCards] = useState(10);
   const [winner, setWinner] = useState(null);
 
-  // Modo Infinito / Libre después de que alguien alcance la meta
+  // Modo Infinito / Libre
   const [isEndlessMode, setIsEndlessMode] = useState(false);
   const [isFinalEnd, setIsFinalEnd] = useState(false);
 
@@ -111,6 +135,13 @@ export default function App() {
         stealingPlayerIndex,
         playlistTitle,
         activePlaylistId,
+        difficulty,
+        turnTimerSeconds,
+        enableEvents,
+        turnCount,
+        activeEvent,
+        hint1Active,
+        eliminatedSlots,
         deck,
         currentTrack,
         selectedSlot,
@@ -131,6 +162,13 @@ export default function App() {
     stealingPlayerIndex,
     playlistTitle,
     activePlaylistId,
+    difficulty,
+    turnTimerSeconds,
+    enableEvents,
+    turnCount,
+    activeEvent,
+    hint1Active,
+    eliminatedSlots,
     deck,
     currentTrack,
     selectedSlot,
@@ -144,6 +182,40 @@ export default function App() {
     cardRevokedThisTurn
   ]);
 
+  // Manejador del reloj de cuenta regresiva (Adrenalina)
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    if (gameState === 'playing' && turnTimerSeconds > 0 && !isRevealed) {
+      setTimeLeft(turnTimerSeconds);
+      timerRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current);
+            // Tiempo agotado: marcar error automático si no reveló
+            handleTimeExpired();
+            return 0;
+          }
+          if (prev <= 10) {
+            playTickSound(true);
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [gameState, turnTimerSeconds, currentTrack, isRevealed]);
+
+  const handleTimeExpired = () => {
+    if (isRevealed) return;
+    playErrorSound();
+    setIsCorrect(false);
+    setIsRevealed(true);
+  };
+
   // Reanudar partida guardada
   const handleResumeGame = () => {
     const saved = loadGameSession();
@@ -156,6 +228,13 @@ export default function App() {
       setViewingPlayerIndex(null);
       setPlaylistTitle(saved.playlistTitle || 'Urbano Argentino 🇦🇷');
       setActivePlaylistId(saved.activePlaylistId || 'urbano-argentina');
+      setDifficulty(saved.difficulty || 'classic');
+      setTurnTimerSeconds(saved.turnTimerSeconds || 0);
+      setEnableEvents(saved.enableEvents !== undefined ? saved.enableEvents : true);
+      setTurnCount(saved.turnCount || 1);
+      setActiveEvent(saved.activeEvent || null);
+      setHint1Active(saved.hint1Active || false);
+      setEliminatedSlots(saved.eliminatedSlots || []);
       setDeck(saved.deck || []);
       setCurrentTrack(saved.currentTrack || null);
       setSelectedSlot(saved.selectedSlot !== undefined ? saved.selectedSlot : null);
@@ -183,10 +262,21 @@ export default function App() {
   };
 
   // Iniciar nueva partida
-  const handleStartGame = async ({ players: initialPlayers, targetCards: target, playlistId }) => {
+  const handleStartGame = async ({
+    players: initialPlayers,
+    targetCards: target,
+    difficulty: diff,
+    turnTimerSeconds: timerSec,
+    enableEvents: eventsOn,
+    playlistId
+  }) => {
     const chosenPlaylist = getPlaylistById(playlistId);
     setPlaylistTitle(chosenPlaylist.title);
     setActivePlaylistId(chosenPlaylist.id);
+    setDifficulty(diff);
+    setTurnTimerSeconds(timerSec);
+    setEnableEvents(eventsOn);
+    setTurnCount(1);
 
     const shuffled = shuffleDeck(chosenPlaylist.tracks);
 
@@ -201,9 +291,10 @@ export default function App() {
       const enriched = await enrichTrack(initialTrack);
       preparedPlayers.push({
         ...p,
-        tokens: 2,
+        tokens: p.tokens !== undefined ? p.tokens : diff === 'expert' ? 1 : 2,
         cards: [enriched],
-        score: 1
+        score: 1,
+        stats: { attempts: 0, hits: 0, steals: 0, hintsUsed: 0 }
       });
     }
 
@@ -218,11 +309,17 @@ export default function App() {
     setWinner(null);
     clearGameSession();
 
-    await prepareNextTurn(currentDeck, 0, chosenPlaylist);
+    await prepareNextTurn(currentDeck, 0, chosenPlaylist, 1, eventsOn);
   };
 
   // Preparar el siguiente turno
-  const prepareNextTurn = async (remainingDeck, nextPlayerIndex, playlistObj = null) => {
+  const prepareNextTurn = async (
+    remainingDeck,
+    nextPlayerIndex,
+    playlistObj = null,
+    nextTurnCount = null,
+    eventsEnabled = null
+  ) => {
     setSelectedSlot(null);
     setIsRevealed(false);
     setIsCorrect(null);
@@ -231,6 +328,24 @@ export default function App() {
     setViewingPlayerIndex(null);
     setBonusClaimedThisTurn(false);
     setCardRevokedThisTurn(false);
+    setHint1Active(false);
+    setEliminatedSlots([]);
+
+    const tCount = nextTurnCount !== null ? nextTurnCount : turnCount + 1;
+    setTurnCount(tCount);
+
+    const useEvents = eventsEnabled !== null ? eventsEnabled : enableEvents;
+    // Activar Evento Sorpresa cada 4 turnos si están habilitados
+    if (useEvents && tCount > 1 && tCount % 4 === 0) {
+      const ev = getRandomSurpriseEvent();
+      setActiveEvent(ev);
+      playEventSound();
+      if (ev.freeHint) {
+        setHint1Active(true);
+      }
+    } else {
+      setActiveEvent(null);
+    }
 
     let deckToUse = [...remainingDeck];
     if (deckToUse.length === 0) {
@@ -248,38 +363,117 @@ export default function App() {
     setIsEnriching(false);
   };
 
-  // Jugador que actualmente está colocando la carta (el del turno o quien robó con ficha)
   const effectivePlayerIndex =
     stealingPlayerIndex !== null ? stealingPlayerIndex : activePlayerIndex;
   const currentPlayer = players[effectivePlayerIndex] || {};
 
-  // Jugador cuya línea de tiempo se está viendo en pantalla
   const displayedPlayerIndex =
     viewingPlayerIndex !== null ? viewingPlayerIndex : effectivePlayerIndex;
   const displayedPlayer = players[displayedPlayerIndex] || currentPlayer;
   const isPeekingOtherPlayer =
     viewingPlayerIndex !== null && viewingPlayerIndex !== effectivePlayerIndex;
 
-  // Acción de Ficha 1: Robar el turno cuando el jugador activo no se sabe la canción
+  // Cambiar evento sorpresa gastando 1 ⚡ Ficha
+  const handleChangeEvent = () => {
+    if ((currentPlayer.tokens || 0) < 1 || !activeEvent) return;
+    playTokenSound();
+    const newEvent = getRandomSurpriseEvent(activeEvent.id);
+    setActiveEvent(newEvent);
+
+    const updatedPlayers = [...players];
+    updatedPlayers[effectivePlayerIndex] = {
+      ...currentPlayer,
+      tokens: currentPlayer.tokens - 1
+    };
+    setPlayers(updatedPlayers);
+    if (newEvent.freeHint) setHint1Active(true);
+  };
+
+  // Pista 1 (Visual/Artista - Cuesta 0.5 ⚡)
+  const handleUseHint1 = () => {
+    if (hint1Active || isRevealed) return;
+    if ((currentPlayer.tokens || 0) < 0.5) return;
+
+    playTokenSound();
+    setHint1Active(true);
+    const updatedPlayers = [...players];
+    updatedPlayers[effectivePlayerIndex] = {
+      ...currentPlayer,
+      tokens: Math.max(0, (currentPlayer.tokens || 0) - 0.5),
+      stats: {
+        ...(currentPlayer.stats || {}),
+        hintsUsed: ((currentPlayer.stats?.hintsUsed || 0) + 1)
+      }
+    };
+    setPlayers(updatedPlayers);
+  };
+
+  // Pista 2 (Descartar 50% de ranuras incorrectas - Cuesta 0.5 ⚡)
+  const handleUseHint2 = () => {
+    if (eliminatedSlots.length > 0 || isRevealed || !currentTrack) return;
+    if ((currentPlayer.tokens || 0) < 0.5) return;
+
+    const cards = currentPlayer.cards || [];
+    const totalSlots = cards.length + 1;
+    if (totalSlots < 3) return; // Se necesitan al menos 3 ranuras para descartar
+
+    playTokenSound();
+    // Encontrar cuál es la ranura correcta
+    let correctIdx = 0;
+    while (correctIdx < cards.length && cards[correctIdx].year <= currentTrack.year) {
+      correctIdx++;
+    }
+
+    // Identificar ranuras incorrectas
+    const wrongSlots = [];
+    for (let i = 0; i < totalSlots; i++) {
+      if (i !== correctIdx) wrongSlots.push(i);
+    }
+
+    // Descartar la mitad aleatoriamente
+    const slotsToEliminateCount = Math.floor(wrongSlots.length / 2);
+    const shuffledWrong = shuffleDeck(wrongSlots);
+    const eliminated = shuffledWrong.slice(0, slotsToEliminateCount);
+
+    setEliminatedSlots(eliminated);
+    const updatedPlayers = [...players];
+    updatedPlayers[effectivePlayerIndex] = {
+      ...currentPlayer,
+      tokens: Math.max(0, (currentPlayer.tokens || 0) - 0.5),
+      stats: {
+        ...(currentPlayer.stats || {}),
+        hintsUsed: ((currentPlayer.stats?.hintsUsed || 0) + 1)
+      }
+    };
+    setPlayers(updatedPlayers);
+  };
+
+  // Acción de Ficha: Robar turno
   const handleStealTurn = (challengerIdx) => {
     const challenger = players[challengerIdx];
-    if (!challenger || (challenger.tokens || 0) < 1) return;
+    const cost = activeEvent?.stealDiscount || 1;
+    if (!challenger || (challenger.tokens || 0) < cost) return;
 
     playTokenSound();
     const updatedPlayers = [...players];
     updatedPlayers[challengerIdx] = {
       ...challenger,
-      tokens: challenger.tokens - 1
+      tokens: Math.max(0, (challenger.tokens || 0) - cost),
+      stats: {
+        ...(challenger.stats || {}),
+        steals: ((challenger.stats?.steals || 0) + 1)
+      }
     };
 
     setPlayers(updatedPlayers);
     setStealingPlayerIndex(challengerIdx);
     setViewingPlayerIndex(null);
     setSelectedSlot(null);
+    setEliminatedSlots([]);
     setShowStealModal(false);
   };
 
-  // Acción de Ficha 2: Saltar canción desconocida por 1 Ficha
+  // Acción de Ficha: Saltar canción por 1 ⚡
   const handleSkipSongWithToken = async () => {
     if ((currentPlayer.tokens || 0) < 1 || isRevealed) return;
 
@@ -287,14 +481,14 @@ export default function App() {
     const updatedPlayers = [...players];
     updatedPlayers[effectivePlayerIndex] = {
       ...currentPlayer,
-      tokens: currentPlayer.tokens - 1
+      tokens: (currentPlayer.tokens || 0) - 1
     };
     setPlayers(updatedPlayers);
 
     await prepareNextTurn(deck, activePlayerIndex);
   };
 
-  // Acción de Ficha 3: Canjear 3 Fichas por 1 Carta Directa
+  // Acción de Ficha: Canjear 3 ⚡ por Carta
   const handleRedeemFreeCard = () => {
     if ((currentPlayer.tokens || 0) < 3 || !currentTrack || isRevealed) return;
 
@@ -311,9 +505,14 @@ export default function App() {
     const updatedPlayers = [...players];
     updatedPlayers[effectivePlayerIndex] = {
       ...currentPlayer,
-      tokens: currentPlayer.tokens - 3,
+      tokens: (currentPlayer.tokens || 0) - 3,
       cards: updatedCards,
-      score: updatedCards.length
+      score: updatedCards.length,
+      stats: {
+        ...(currentPlayer.stats || {}),
+        attempts: (currentPlayer.stats?.attempts || 0) + 1,
+        hits: (currentPlayer.stats?.hits || 0) + 1
+      }
     };
 
     setPlayers(updatedPlayers);
@@ -327,7 +526,6 @@ export default function App() {
       confetti({ particleCount: 60, spread: 70, origin: { y: 0.7 } });
     } catch {}
 
-    // Si aún no están en Modo Infinito y alcanzó la meta, mostrar celebración
     if (!isEndlessMode && updatedCards.length >= targetCards) {
       setWinner(updatedPlayers[effectivePlayerIndex]);
       setIsFinalEnd(false);
@@ -359,6 +557,22 @@ export default function App() {
       }
     }
 
+    // Tolerancia por modo de dificultad o evento especial
+    // Relajada: ±2 años; Turno blindado: ±3 años
+    let tolerance = 0;
+    if (difficulty === 'relaxed') tolerance = Math.max(tolerance, 2);
+    if (activeEvent?.marginTolerance) tolerance = Math.max(tolerance, activeEvent.marginTolerance);
+
+    if (!valid && tolerance > 0) {
+      const prevYear = selectedSlot > 0 ? cards[selectedSlot - 1].year : -9999;
+      const nextYear = selectedSlot < cards.length ? cards[selectedSlot].year : 9999;
+      const distPrev = Math.abs(currentTrack.year - prevYear);
+      const distNext = Math.abs(currentTrack.year - nextYear);
+      if (distPrev <= tolerance || distNext <= tolerance) {
+        valid = true;
+      }
+    }
+
     let realIndex = 0;
     while (realIndex < cards.length && cards[realIndex].year <= currentTrack.year) {
       realIndex++;
@@ -367,6 +581,9 @@ export default function App() {
     setIsCorrect(valid);
     setCorrectSlotIndex(realIndex);
     setIsRevealed(true);
+
+    const updatedPlayers = [...players];
+    const prevStats = currentPlayer.stats || { attempts: 0, hits: 0, steals: 0, hintsUsed: 0 };
 
     if (valid) {
       playSuccessSound();
@@ -381,11 +598,34 @@ export default function App() {
       const updatedCards = [...cards];
       updatedCards.splice(selectedSlot, 0, currentTrack);
 
-      const updatedPlayers = [...players];
+      // Si el evento es "Doble o Nada", gana 1 carta adicional del mazo
+      if (activeEvent?.rewardCards === 2 && deck.length > 0) {
+        const extraTrack = deck.pop();
+        if (extraTrack) {
+          let extraIdx = 0;
+          while (extraIdx < updatedCards.length && updatedCards[extraIdx].year <= extraTrack.year) {
+            extraIdx++;
+          }
+          updatedCards.splice(extraIdx, 0, extraTrack);
+        }
+      }
+
+      // Bonus de fichas por evento
+      let tokenReward = currentPlayer.tokens || 0;
+      if (activeEvent?.bonusToken) {
+        tokenReward = Math.min(5, tokenReward + activeEvent.bonusToken);
+      }
+
       updatedPlayers[effectivePlayerIndex] = {
         ...currentPlayer,
         cards: updatedCards,
-        score: updatedCards.length
+        score: updatedCards.length,
+        tokens: tokenReward,
+        stats: {
+          ...prevStats,
+          attempts: prevStats.attempts + 1,
+          hits: prevStats.hits + 1
+        }
       };
       setPlayers(updatedPlayers);
 
@@ -398,22 +638,36 @@ export default function App() {
       }
     } else {
       playErrorSound();
+      // Penalización si es Doble o Nada
+      let updatedTokens = currentPlayer.tokens || 0;
+      if (activeEvent?.penaltyTokens) {
+        updatedTokens = Math.max(0, updatedTokens - activeEvent.penaltyTokens);
+      }
+
+      updatedPlayers[effectivePlayerIndex] = {
+        ...currentPlayer,
+        tokens: updatedTokens,
+        stats: {
+          ...prevStats,
+          attempts: prevStats.attempts + 1
+        }
+      };
+      setPlayers(updatedPlayers);
     }
   };
 
-  // Continuar la partida en Modo Infinito / Libre después de que alguien llegó a la meta
+  // Continuar en Modo Infinito
   const handleContinueEndless = () => {
     setIsEndlessMode(true);
     setIsFinalEnd(false);
     setGameState('playing');
-    // Si la carta actual ya fue revelada, pasamos automáticamente al siguiente turno
     if (isRevealed) {
       const nextIndex = (activePlayerIndex + 1) % players.length;
       prepareNextTurn(deck, nextIndex);
     }
   };
 
-  // Finalizar la partida manualmente en cualquier momento para ver el podio final
+  // Finalizar partida manualmente
   const handleFinishMatchNow = () => {
     const sorted = [...players].sort((a, b) => (b.cards?.length || 0) - (a.cards?.length || 0));
     setWinner(sorted[0] || currentPlayer);
@@ -435,7 +689,7 @@ export default function App() {
     setBonusClaimedThisTurn(true);
   };
 
-  // Si en la familia juegan con regla estricta ("Si no adivinó la canción, no se lleva la carta")
+  // Anular carta si juegan con regla estricta y no supo la canción
   const handleRevokeCardForNotKnowingSong = () => {
     if (!isCorrect || cardRevokedThisTurn) return;
     playErrorSound();
@@ -465,11 +719,21 @@ export default function App() {
     setCurrentTrack(null);
   };
 
+  // Inicial de pista y década para Pista 1
+  const getArtistHintText = () => {
+    if (!currentTrack || !currentTrack.artist) return null;
+    const initial = currentTrack.artist.charAt(0).toUpperCase();
+    const decade = currentTrack.year ? `${Math.floor(currentTrack.year / 10) * 10}s` : '¿?';
+    return `Artista empieza con "${initial}" • Lanzada en los ${decade}`;
+  };
+
+  const isUrgentTimer = turnTimerSeconds > 0 && timeLeft <= 10 && !isRevealed;
+
   return (
     <div className="min-h-screen flex flex-col justify-between select-none relative overflow-x-hidden">
       {/* Barra Superior / Header */}
       <header
-        className="w-full px-3 sm:px-8 py-3 flex items-center justify-between border-b backdrop-blur-md sticky top-0 z-40"
+        className="w-full px-3 sm:px-8 py-2.5 sm:py-3 flex items-center justify-between border-b backdrop-blur-md sticky top-0 z-40"
         style={{
           backgroundColor: 'var(--color-bg-glass)',
           borderColor: 'var(--border-subtle)'
@@ -477,47 +741,47 @@ export default function App() {
       >
         {/* Logo */}
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-md bg-gradient-to-tr from-violet-600 to-cyan-500 text-white shrink-0">
-            <Disc className="w-5 h-5 animate-spin-slow" />
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shadow-md bg-gradient-to-tr from-violet-600 to-cyan-500 text-white shrink-0">
+            <Disc className="w-4 h-4 sm:w-5 sm:h-5 animate-spin-slow" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="font-black text-lg sm:text-xl tracking-tight text-white leading-tight">
+              <h1 className="font-black text-base sm:text-xl tracking-tight text-white leading-tight">
                 BeatLine
               </h1>
               {gameState === 'playing' && isEndlessMode && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 flex items-center gap-1">
                   <InfinityIcon className="w-3 h-3" /> Modo Libre
                 </span>
               )}
             </div>
-            <span className="text-[10px] font-semibold text-slate-400 block -mt-0.5 font-mono truncate max-w-[160px] sm:max-w-xs">
+            <span className="text-[10px] font-semibold text-slate-400 block -mt-0.5 font-mono truncate max-w-[140px] sm:max-w-xs">
               {playlistTitle}
             </span>
           </div>
         </div>
 
         {/* Acciones de Cabecera */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Botón de Tema Claro (Exteriores) / Oscuro */}
           <button
             onClick={toggleTheme}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-200 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/50 transition-all active:scale-95 cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-bold text-slate-200 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/50 transition-all active:scale-95 cursor-pointer"
             title={
               theme === 'dark'
-                ? 'Cambiar a Modo Claro (Ideal para exteriores / luz de día)'
+                ? 'Cambiar a Modo Claro (Ideal para exteriores)'
                 : 'Cambiar a Modo Oscuro'
             }
           >
             {theme === 'dark' ? (
               <>
-                <Sun className="w-4 h-4 text-amber-400" />
-                <span className="hidden md:inline">Modo Exterior</span>
+                <Sun className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden md:inline">Exterior</span>
               </>
             ) : (
               <>
-                <Moon className="w-4 h-4 text-violet-600" />
-                <span className="hidden md:inline">Modo Oscuro</span>
+                <Moon className="w-3.5 h-3.5 text-violet-600" />
+                <span className="hidden md:inline">Oscuro</span>
               </>
             )}
           </button>
@@ -525,37 +789,37 @@ export default function App() {
           {gameState === 'playing' && (
             <button
               onClick={handleFinishMatchNow}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-amber-300 hover:text-amber-200 bg-amber-950/50 hover:bg-amber-900/60 border border-amber-500/40 transition-all active:scale-95 cursor-pointer"
-              title="Terminar la partida y ver el podio de ganadores"
+              className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-bold text-amber-300 hover:text-amber-200 bg-amber-950/50 hover:bg-amber-900/60 border border-amber-500/40 transition-all active:scale-95 cursor-pointer"
+              title="Terminar la partida y ver resultados"
             >
               <Flag className="w-3.5 h-3.5" />
-              <span>Finalizar Partida</span>
+              <span>Finalizar</span>
             </button>
           )}
 
           <button
             onClick={() => setShowInstructions(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-200 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/50 transition-all active:scale-95 cursor-pointer"
-            title="Ver manual, reglas y uso de fichas"
+            className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-bold text-slate-200 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/50 transition-all active:scale-95 cursor-pointer"
+            title="Ver manual y reglas"
           >
-            <BookOpen className="w-4 h-4 text-violet-400" />
-            <span className="hidden sm:inline">Reglas y Fichas ⚡</span>
+            <BookOpen className="w-3.5 h-3.5 text-violet-400" />
+            <span className="hidden sm:inline">Reglas</span>
           </button>
 
           {gameState === 'playing' && (
             <button
               onClick={() => setShowResetConfirm(true)}
-              className="p-2 rounded-xl text-slate-400 hover:text-rose-400 bg-slate-800/50 hover:bg-rose-950/30 border border-slate-700/40 transition-colors cursor-pointer"
+              className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-rose-400 bg-slate-800/50 hover:bg-rose-950/30 border border-slate-700/40 transition-colors cursor-pointer"
               title="Salir al menú principal"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           )}
         </div>
       </header>
 
       {/* CONTENIDO SEGÚN ESTADO */}
-      <main className="flex-1 flex flex-col justify-center items-center w-full px-2 sm:px-4 py-3 max-w-6xl mx-auto">
+      <main className="flex-1 flex flex-col justify-center items-center w-full px-2 sm:px-4 py-2 sm:py-3 max-w-6xl mx-auto">
         {gameState === 'setup' && (
           <PlayerSetup
             onStartGame={handleStartGame}
@@ -565,8 +829,49 @@ export default function App() {
         )}
 
         {gameState === 'playing' && currentTrack && (
-          <div className="w-full flex flex-col items-center space-y-3 animate-fadeIn">
-            {/* Marcador Global de Jugadores (Toca un jugador para espiar su línea de tiempo) */}
+          <div className="w-full flex flex-col items-center space-y-2.5 animate-fadeIn">
+            
+            {/* Banner de Evento Sorpresa (si está activo este turno) */}
+            {activeEvent && !isRevealed && (
+              <div 
+                className="w-full p-2.5 sm:p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-lg animate-pulse"
+                style={{
+                  backgroundColor: `${activeEvent.color}15`,
+                  borderColor: `${activeEvent.color}60`
+                }}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div 
+                    className="p-2 rounded-xl text-white font-bold shrink-0"
+                    style={{ backgroundColor: activeEvent.color }}
+                  >
+                    <Dices className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-xs sm:text-sm text-white flex items-center gap-2">
+                      <span>{activeEvent.title}</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-300">
+                      {activeEvent.description}
+                    </p>
+                  </div>
+                </div>
+
+                {(currentPlayer.tokens || 0) >= 1 && (
+                  <button
+                    type="button"
+                    onClick={handleChangeEvent}
+                    className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-700 shrink-0 flex items-center gap-1 cursor-pointer"
+                    title="Paga 1 ficha si este evento te parece muy complicado"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Cambiar (1 ⚡)
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Marcador Global de Jugadores */}
             <div className="w-full flex items-center gap-2 overflow-x-auto pb-1 px-1">
               {players.map((p, idx) => {
                 const isTurn = idx === effectivePlayerIndex;
@@ -579,7 +884,7 @@ export default function App() {
                     onClick={() =>
                       setViewingPlayerIndex(idx === effectivePlayerIndex ? null : idx)
                     }
-                    className={`flex items-center justify-between gap-3 px-3.5 py-2 rounded-2xl border text-xs transition-all shrink-0 cursor-pointer ${
+                    className={`flex items-center justify-between gap-2.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-2xl border text-xs transition-all shrink-0 cursor-pointer ${
                       isStealing
                         ? 'bg-amber-950/60 border-amber-400 text-white shadow-lg'
                         : isTurn
@@ -588,22 +893,22 @@ export default function App() {
                         ? 'bg-cyan-950/60 border-cyan-400 text-white'
                         : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
                     }`}
-                    title="Toca para ver la línea de tiempo de este jugador"
+                    title="Toca para ver el tablero de este jugador"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold truncate max-w-[100px]">{p.name}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold truncate max-w-[90px]">{p.name}</span>
                       {isStealing && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 font-black text-[9px] uppercase">
-                          ¡Robando!
+                        <span className="px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] uppercase">
+                          Robo
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 font-mono font-bold">
-                      <span className="text-cyan-300" title="Cartas en su línea del tiempo">
+                    <div className="flex items-center gap-2 font-mono font-bold text-[11px]">
+                      <span className="text-cyan-300">
                         💿 {p.cards?.length || 0}
                         {!isEndlessMode ? `/${targetCards}` : ''}
                       </span>
-                      <span className="text-amber-400" title="Fichas BeatLine disponibles">
+                      <span className="text-amber-400">
                         ⚡ {p.tokens || 0}
                       </span>
                     </div>
@@ -612,11 +917,11 @@ export default function App() {
               })}
             </div>
 
-            {/* Banner de Jugador Activo y Controles de Fichas ⚡ */}
-            <div className="w-full flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-2xl bg-slate-900/80 border border-slate-800">
-              <div className="flex items-center gap-3">
+            {/* Banner de Jugador Activo, Reloj y Fichas ⚡ */}
+            <div className="w-full flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-2xl bg-slate-900/80 border border-slate-800">
+              <div className="flex items-center gap-2.5">
                 <div
-                  className="keep-white w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm text-white shadow-md"
+                  className="keep-white w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-black text-xs sm:text-sm text-white shadow-md"
                   style={{
                     backgroundColor:
                       stealingPlayerIndex !== null ? 'var(--color-accent)' : 'var(--color-primary)'
@@ -625,56 +930,99 @@ export default function App() {
                   {stealingPlayerIndex !== null ? '⚡' : `#${activePlayerIndex + 1}`}
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                     {stealingPlayerIndex !== null
-                      ? `¡Turno robado a ${players[activePlayerIndex]?.name}!`
-                      : 'Escucha, adivina la canción en voz alta y acomódala'}
+                      ? `¡Turno robado por ${currentPlayer.name}!`
+                      : `Turno ${turnCount} • ${difficulty === 'relaxed' ? 'Modo Relajado (±2a)' : 'Modo Clásico'}`}
                   </span>
-                  <h2 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                  <h2 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
                     Juega: {currentPlayer.name}
-                    <span className="text-xs font-mono px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                      ⚡ {currentPlayer.tokens || 0} fichas
+                    <span className="text-xs font-mono px-2 py-0.2 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                      ⚡ {currentPlayer.tokens || 0}
                     </span>
                   </h2>
                 </div>
               </div>
 
-              {/* Botones de Uso de Fichas antes de revelar */}
+              {/* Reloj de Adrenalina si está configurado */}
+              {turnTimerSeconds > 0 && !isRevealed && (
+                <div 
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-mono font-black text-xs sm:text-sm ${
+                    isUrgentTimer 
+                      ? 'bg-rose-950/80 border-rose-500 text-rose-300 animate-pulse' 
+                      : 'bg-slate-800 border-slate-700 text-white'
+                  }`}
+                >
+                  <Clock className={`w-4 h-4 ${isUrgentTimer ? 'text-rose-400 animate-spin-slow' : 'text-amber-400'}`} />
+                  <span>{timeLeft}s</span>
+                </div>
+              )}
+
+              {/* Botones de Fichas y Pistas Comodín */}
               {!isRevealed && (
-                <div className="flex flex-wrap items-center gap-2">
-                  {players.some((p, i) => i !== effectivePlayerIndex && (p.tokens || 0) >= 1) && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {/* Pista 1 (Visual/Artista - 0.5 ⚡) */}
+                  {!hint1Active && (currentPlayer.tokens || 0) >= 0.5 && (
                     <button
                       type="button"
-                      onClick={() => setShowStealModal(true)}
-                      className="px-3 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
-                      title="Si el jugador en turno no se sabe la canción, otro puede pagar 1 ficha y robarla"
+                      onClick={handleUseHint1}
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 flex items-center gap-1 cursor-pointer"
+                      title="Muestra la portada borrosa y la inicial del artista por media ficha"
                     >
-                      <Zap className="w-3.5 h-3.5 fill-amber-400" />
-                      ¿No se la sabe? Robar (1 ⚡)
+                      <Lightbulb className="w-3.5 h-3.5" />
+                      Pista Artista (0.5 ⚡)
                     </button>
                   )}
 
+                  {/* Pista 2 (Descartar 50% de ranuras - 0.5 ⚡) */}
+                  {eliminatedSlots.length === 0 && (currentPlayer.cards?.length || 0) >= 2 && (currentPlayer.tokens || 0) >= 0.5 && (
+                    <button
+                      type="button"
+                      onClick={handleUseHint2}
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 cursor-pointer"
+                      title="Descarta la mitad de las opciones incorrectas por media ficha"
+                    >
+                      <Lightbulb className="w-3.5 h-3.5" />
+                      Descartar Ranuras (0.5 ⚡)
+                    </button>
+                  )}
+
+                  {/* Robar turno */}
+                  {players.some((p, i) => i !== effectivePlayerIndex && (p.tokens || 0) >= (activeEvent?.stealDiscount || 1)) && (
+                    <button
+                      type="button"
+                      onClick={() => setShowStealModal(true)}
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 flex items-center gap-1 cursor-pointer"
+                      title="Otro jugador puede gastar fichas para robarse esta carta"
+                    >
+                      <Zap className="w-3.5 h-3.5 fill-rose-400" />
+                      Robar ({activeEvent?.stealDiscount || 1} ⚡)
+                    </button>
+                  )}
+
+                  {/* Saltar canción */}
                   {(currentPlayer.tokens || 0) >= 1 && (
                     <button
                       type="button"
                       onClick={handleSkipSongWithToken}
-                      className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
-                      title="Paga 1 ficha para descartar esta canción y escuchar otra"
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1 cursor-pointer"
+                      title="Descarta esta canción y escucha otra"
                     >
                       <SkipForward className="w-3.5 h-3.5 text-cyan-400" />
                       Saltar (1 ⚡)
                     </button>
                   )}
 
+                  {/* Canjear 3 fichas por carta */}
                   {(currentPlayer.tokens || 0) >= 3 && (
                     <button
                       type="button"
                       onClick={handleRedeemFreeCard}
-                      className="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
-                      title="Canjea 3 fichas para ganar esta carta automáticamente"
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 cursor-pointer"
+                      title="Gasta 3 fichas y gana esta carta automáticamente"
                     >
                       <Gift className="w-3.5 h-3.5" />
-                      Canjear Carta (3 ⚡)
+                      Comprar (3 ⚡)
                     </button>
                   )}
                 </div>
@@ -689,15 +1037,19 @@ export default function App() {
               title={currentTrack.title}
               artist={currentTrack.artist}
               year={currentTrack.year}
+              maxDuration={activeEvent?.maxDuration || null}
+              blurredArtwork={hint1Active}
+              artistHint={hint1Active ? getArtistHintText() : null}
+              isUrgentTimer={isUrgentTimer}
             />
 
             {/* Acciones de Revelar / Resultado y Bonus Verbal */}
-            <div className="flex flex-col items-center justify-center gap-2.5 my-1 w-full">
+            <div className="flex flex-col items-center justify-center gap-2 my-1 w-full">
               {!isRevealed ? (
                 <button
                   onClick={handleReveal}
                   disabled={selectedSlot === null || isEnriching || isPeekingOtherPlayer}
-                  className={`px-8 py-3.5 rounded-2xl font-black text-base text-white shadow-xl transition-all duration-300 transform active:scale-95 disabled:opacity-40 disabled:scale-100 flex items-center gap-2 cursor-pointer ${
+                  className={`px-8 py-3 rounded-2xl font-black text-sm sm:text-base text-white shadow-xl transition-all duration-300 transform active:scale-95 disabled:opacity-40 disabled:scale-100 flex items-center gap-2 cursor-pointer ${
                     selectedSlot !== null && !isPeekingOtherPlayer ? 'keep-white' : ''
                   }`}
                   style={{
@@ -711,18 +1063,18 @@ export default function App() {
                         : 'none'
                   }}
                 >
-                  <Sparkles className="w-5 h-5 text-amber-300" />
+                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
                   {isPeekingOtherPlayer
-                    ? `Viendo a ${displayedPlayer.name} (Vuelve a ${currentPlayer.name} para jugar)`
+                    ? `Viendo a ${displayedPlayer.name} (Vuelve para jugar)`
                     : selectedSlot === null
-                    ? '1º Di qué canción es y toca una ranura [ + ] abajo'
+                    ? '1º Di qué canción es y toca una ranura [ + ]'
                     : '¡Revelar Año y Canción!'}
                 </button>
               ) : (
-                <div className="flex flex-col items-center gap-3 w-full max-w-2xl">
-                  <div className="flex flex-wrap items-center justify-center gap-2.5">
+                <div className="flex flex-col items-center gap-2.5 w-full max-w-2xl">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
                     <div
-                      className={`px-4 py-2.5 rounded-xl border flex items-center gap-2 text-xs sm:text-sm font-bold ${
+                      className={`px-3.5 py-2 rounded-xl border flex items-center gap-2 text-xs sm:text-sm font-bold ${
                         isCorrect
                           ? 'bg-emerald-950/70 border-emerald-500/60 text-emerald-300'
                           : 'bg-rose-950/70 border-rose-500/60 text-rose-300'
@@ -730,14 +1082,14 @@ export default function App() {
                     >
                       {isCorrect ? (
                         <>
-                          <Check className="w-5 h-5 shrink-0" />
+                          <Check className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
                           <span>
                             ¡Año correcto ({currentTrack.year})! Carta sumada a {currentPlayer.name}
                           </span>
                         </>
                       ) : (
                         <>
-                          <X className="w-5 h-5 shrink-0" />
+                          <X className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
                           <span>
                             {cardRevokedThisTurn
                               ? 'Carta anulada por no saberse la canción'
@@ -749,7 +1101,7 @@ export default function App() {
 
                     <button
                       onClick={handleNextTurn}
-                      className="px-6 py-2.5 rounded-xl font-black text-xs sm:text-sm text-slate-950 transition-transform active:scale-95 shadow-xl flex items-center gap-2 cursor-pointer"
+                      className="px-5 py-2 rounded-xl font-black text-xs sm:text-sm text-slate-950 transition-transform active:scale-95 shadow-xl flex items-center gap-1.5 cursor-pointer"
                       style={{ backgroundColor: 'var(--color-accent)' }}
                     >
                       Siguiente Turno <ArrowRight className="w-4 h-4" />
@@ -762,7 +1114,7 @@ export default function App() {
                       type="button"
                       disabled={bonusClaimedThisTurn}
                       onClick={handleAwardGuessBonus}
-                      className={`px-3.5 py-2 rounded-xl font-bold border flex items-center gap-1.5 transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-xl font-bold border flex items-center gap-1.5 transition-all cursor-pointer ${
                         bonusClaimedThisTurn
                           ? 'bg-amber-950/40 border-amber-500/40 text-amber-300'
                           : 'bg-slate-800 hover:bg-slate-700 border-amber-500/40 text-amber-300'
@@ -770,7 +1122,7 @@ export default function App() {
                     >
                       <Mic className="w-3.5 h-3.5" />
                       {bonusClaimedThisTurn
-                        ? '¡+1 Ficha ⚡ entregada por saberse la canción!'
+                        ? '¡+1 ⚡ Ficha entregada por acertar la canción!'
                         : '¿Dijo bien Canción y Artista en voz alta? (+1 ⚡)'}
                     </button>
 
@@ -778,8 +1130,8 @@ export default function App() {
                       <button
                         type="button"
                         onClick={handleRevokeCardForNotKnowingSong}
-                        className="px-3 py-2 rounded-xl font-semibold bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/50 text-rose-300 flex items-center gap-1 cursor-pointer"
-                        title="Si juegan con la regla de que es obligatorio saberse la canción para ganar la carta, toca aquí si no se la supo"
+                        className="px-3 py-1.5 rounded-xl font-semibold bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/50 text-rose-300 flex items-center gap-1 cursor-pointer"
+                        title="Toca aquí si la regla familiar exige adivinar la canción para quedársela"
                       >
                         <Undo2 className="w-3.5 h-3.5" />
                         No se supo la canción (Quitar carta)
@@ -792,25 +1144,24 @@ export default function App() {
 
             {/* Zona Inferior: Línea de Tiempo */}
             <div className="w-full">
-              <div className="flex flex-wrap items-center justify-between gap-2 px-2 mb-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-2 mb-0.5">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                    Línea de tiempo de {displayedPlayer.name} ({displayedPlayer.cards?.length || 0}{' '}
-                    canciones)
+                    Línea de tiempo de {displayedPlayer.name} ({displayedPlayer.cards?.length || 0} canciones)
                   </span>
                   {isPeekingOtherPlayer && (
                     <button
                       type="button"
                       onClick={() => setViewingPlayerIndex(null)}
-                      className="px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      className="px-2 py-0.5 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
                     >
-                      <Eye className="w-3 h-3" /> Volver al turno de {currentPlayer.name}
+                      <Eye className="w-3 h-3" /> Volver a {currentPlayer.name}
                     </button>
                   )}
                 </div>
-                <span className="text-[11px] text-slate-500">
+                <span className="text-[10px] text-slate-500">
                   {isPeekingOtherPlayer
-                    ? 'Modo vista previa (Solo lectura)'
+                    ? 'Modo vista previa'
                     : 'Toca una ranura [ + ] para ubicar el año'}
                 </span>
               </div>
@@ -826,52 +1177,54 @@ export default function App() {
                 }}
                 isRevealed={isRevealed && !isPeekingOtherPlayer}
                 correctSlotIndex={isPeekingOtherPlayer ? null : correctSlotIndex}
+                eliminatedSlots={eliminatedSlots}
               />
             </div>
           </div>
         )}
       </main>
 
-      {/* Modal para elegir quién ROBA la canción usando 1 Ficha ⚡ */}
+      {/* Modal para elegir quién ROBA la canción */}
       {showStealModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-amber-500/40 shadow-2xl space-y-4">
+          <div className="w-full max-w-md p-5 sm:p-6 rounded-3xl bg-slate-900 border border-amber-500/40 shadow-2xl space-y-3.5">
             <div className="flex items-center justify-between">
-              <h3 className="font-black text-white text-lg flex items-center gap-2">
+              <h3 className="font-black text-white text-base sm:text-lg flex items-center gap-2">
                 <Zap className="w-5 h-5 text-amber-400 fill-amber-400" />
                 ¡Robar Turno y Canción!
               </h3>
               <button
                 onClick={() => setShowStealModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white"
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
               Si <strong>{currentPlayer.name}</strong> no se sabe esta canción, elige qué familiar gastará{' '}
-              <strong>1 Ficha ⚡</strong> para robarla y acomodarla en su propia línea del tiempo:
+              <strong>{activeEvent?.stealDiscount || 1} Ficha ⚡</strong> para robarla y acomodarla en su propio tablero:
             </p>
 
             <div className="space-y-2">
               {players.map((p, idx) => {
                 if (idx === effectivePlayerIndex) return null;
-                const hasTokens = (p.tokens || 0) >= 1;
+                const cost = activeEvent?.stealDiscount || 1;
+                const hasTokens = (p.tokens || 0) >= cost;
                 return (
                   <button
                     key={p.id}
                     disabled={!hasTokens}
                     onClick={() => handleStealTurn(idx)}
-                    className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-slate-800 hover:bg-violet-950/60 border border-slate-700 hover:border-amber-400 text-left transition-all disabled:opacity-40 cursor-pointer"
+                    className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-violet-950/60 border border-slate-700 hover:border-amber-400 text-left transition-all disabled:opacity-40 cursor-pointer"
                   >
                     <div>
                       <span className="font-bold text-sm text-white block">{p.name}</span>
                       <span className="text-[11px] text-slate-400">
-                        Tiene {p.cards?.length || 0} cartas en su línea del tiempo
+                        {p.cards?.length || 0} canciones en su línea del tiempo
                       </span>
                     </div>
-                    <span className="px-3 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-mono font-bold text-xs border border-amber-500/30">
-                      Usar 1 ⚡ (Tiene {p.tokens || 0})
+                    <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-mono font-bold text-xs border border-amber-500/30">
+                      Usar {cost} ⚡ (Tiene {p.tokens || 0})
                     </span>
                   </button>
                 );
@@ -887,7 +1240,7 @@ export default function App() {
         onClose={() => setShowInstructions(false)}
       />
 
-      {/* Modal de Victoria / Fin de Partida (Con opción de Seguir Jugando en Modo Libre) */}
+      {/* Modal de Victoria / Fin de Partida con Medallas y Modo Libre */}
       {gameState === 'gameover' && (
         <GameOverModal
           winner={winner}
@@ -898,6 +1251,9 @@ export default function App() {
             handleStartGame({
               players,
               targetCards,
+              difficulty,
+              turnTimerSeconds,
+              enableEvents,
               playlistId: activePlaylistId
             })
           }
@@ -908,12 +1264,12 @@ export default function App() {
         />
       )}
 
-      {/* Diálogo de Confirmación para Reiniciar */}
+      {/* Diálogo de Confirmación para Salir al Menú */}
       {showResetConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-sm p-6 rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl text-center space-y-4">
-            <div className="p-3 rounded-full bg-rose-500/20 text-rose-400 w-12 h-12 mx-auto flex items-center justify-center">
-              <AlertTriangle className="w-6 h-6" />
+          <div className="w-full max-w-sm p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl text-center space-y-3.5">
+            <div className="p-2.5 rounded-full bg-rose-500/20 text-rose-400 w-11 h-11 mx-auto flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5" />
             </div>
             <div>
               <h3 className="font-bold text-white text-base">¿Salir al menú principal?</h3>
@@ -921,16 +1277,16 @@ export default function App() {
                 Volverás a la configuración para cambiar de playlist o iniciar una nueva partida.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-3 pt-2">
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
               <button
                 onClick={() => setShowResetConfirm(false)}
-                className="py-2.5 px-4 rounded-xl text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 cursor-pointer"
+                className="py-2 px-3 rounded-xl text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleResetGame}
-                className="py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 cursor-pointer"
+                className="py-2 px-3 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 cursor-pointer"
               >
                 Sí, salir al menú
               </button>
@@ -940,8 +1296,8 @@ export default function App() {
       )}
 
       {/* Pie de página sutil */}
-      <footer className="w-full py-2 text-center text-[10px] text-slate-600 border-t border-slate-800/40">
-        BeatLine • Pasa y Juega • Listo para Tablet y Vercel
+      <footer className="w-full py-1.5 text-center text-[10px] text-slate-600 border-t border-slate-800/40">
+        BeatLine • Pasa y Juega • Optimizado para Tablet
       </footer>
     </div>
   );
