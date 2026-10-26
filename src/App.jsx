@@ -15,7 +15,9 @@ import {
   Undo2,
   Flag,
   Infinity as InfinityIcon,
-  Eye
+  Eye,
+  Sun,
+  Moon
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -71,6 +73,26 @@ export default function App() {
   const [showInstructions, setShowInstructions] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [hasSavedGame, setHasSavedGame] = useState(false);
+
+  // Tema visual: 'dark' (por defecto) o 'light' (alto contraste para exteriores)
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem('beatline_theme') || 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try {
+      localStorage.setItem('beatline_theme', theme);
+    } catch {}
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
 
   // Comprobar si existe una partida previa guardada al cargar
   useEffect(() => {
@@ -477,6 +499,29 @@ export default function App() {
 
         {/* Acciones de Cabecera */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Botón de Tema Claro (Exteriores) / Oscuro */}
+          <button
+            onClick={toggleTheme}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-200 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/50 transition-all active:scale-95 cursor-pointer"
+            title={
+              theme === 'dark'
+                ? 'Cambiar a Modo Claro (Ideal para exteriores / luz de día)'
+                : 'Cambiar a Modo Oscuro'
+            }
+          >
+            {theme === 'dark' ? (
+              <>
+                <Sun className="w-4 h-4 text-amber-400" />
+                <span className="hidden md:inline">Modo Exterior</span>
+              </>
+            ) : (
+              <>
+                <Moon className="w-4 h-4 text-violet-600" />
+                <span className="hidden md:inline">Modo Oscuro</span>
+              </>
+            )}
+          </button>
+
           {gameState === 'playing' && (
             <button
               onClick={handleFinishMatchNow}
@@ -571,7 +616,7 @@ export default function App() {
             <div className="w-full flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-2xl bg-slate-900/80 border border-slate-800">
               <div className="flex items-center gap-3">
                 <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm text-white shadow-md"
+                  className="keep-white w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm text-white shadow-md"
                   style={{
                     backgroundColor:
                       stealingPlayerIndex !== null ? 'var(--color-accent)' : 'var(--color-primary)'
@@ -652,7 +697,9 @@ export default function App() {
                 <button
                   onClick={handleReveal}
                   disabled={selectedSlot === null || isEnriching || isPeekingOtherPlayer}
-                  className="px-8 py-3.5 rounded-2xl font-black text-base text-white shadow-xl transition-all duration-300 transform active:scale-95 disabled:opacity-40 disabled:scale-100 flex items-center gap-2 cursor-pointer"
+                  className={`px-8 py-3.5 rounded-2xl font-black text-base text-white shadow-xl transition-all duration-300 transform active:scale-95 disabled:opacity-40 disabled:scale-100 flex items-center gap-2 cursor-pointer ${
+                    selectedSlot !== null && !isPeekingOtherPlayer ? 'keep-white' : ''
+                  }`}
                   style={{
                     backgroundColor:
                       selectedSlot !== null && !isPeekingOtherPlayer

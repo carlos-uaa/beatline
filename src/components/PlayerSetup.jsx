@@ -265,7 +265,7 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame })
       {/* Botón de Iniciar */}
       <button
         onClick={handleStart}
-        className="w-full py-4 rounded-2xl font-black text-lg text-white shadow-2xl transition-all duration-300 transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+        className="keep-white w-full py-4 rounded-2xl font-black text-lg text-white shadow-2xl transition-all duration-300 transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
         style={{
           background: 'linear-gradient(135deg, var(--color-primary), var(--color-secondary))',
           boxShadow: 'var(--shadow-glow-primary)'

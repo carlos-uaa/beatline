@@ -542,7 +542,7 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
               type="button"
               onClick={handleSaveManualPlaylist}
               disabled={tracks.length < 3}
-              className="px-6 py-2.5 rounded-xl font-bold text-sm text-white shadow-lg transition-transform active:scale-95 disabled:opacity-40 cursor-pointer"
+              className="keep-white px-6 py-2.5 rounded-xl font-bold text-sm text-white shadow-lg transition-transform active:scale-95 disabled:opacity-40 cursor-pointer"
               style={{
                 backgroundColor: 'var(--color-primary)',
                 boxShadow: 'var(--shadow-glow-primary)'

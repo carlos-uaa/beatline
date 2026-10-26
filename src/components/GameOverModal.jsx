@@ -104,7 +104,7 @@ export default function GameOverModal({
           <div className="pt-1">
             <button
               onClick={onContinueEndless}
-              className="w-full py-3.5 px-4 rounded-2xl font-black text-sm text-white shadow-xl transition-transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+              className="keep-white w-full py-3.5 px-4 rounded-2xl font-black text-sm text-white shadow-xl transition-transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
               style={{
                 background: 'linear-gradient(135deg, var(--color-primary), var(--color-secondary))',
                 boxShadow: 'var(--shadow-glow-primary)'

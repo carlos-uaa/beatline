@@ -1,11 +1,12 @@
 @import "tailwindcss";
 
 /* ==========================================================================
-   DESIGN SYSTEM TOKENS - BEATLINE (RITMOTIEMPO)
-   Todas las variables visuales centralizadas para fácil personalización.
+   DESIGN SYSTEM TOKENS - BEATLINE
+   Todas las variables visuales centralizadas para Modo Oscuro y Modo Claro (Exterior).
    ========================================================================== */
 
-:root {
+:root,
+[data-theme="dark"] {
   /* 🎨 PALETA DE MARCA */
   --color-primary: #8b5cf6;            /* Violeta vibrante */
   --color-primary-hover: #7c3aed;      /* Violeta oscuro */
@@ -37,7 +38,7 @@
   --color-info-bg: rgba(2, 132, 199, 0.15);
   --color-info-border: rgba(2, 132, 199, 0.4);
 
-  /* 🌌 SUPERFICIES Y FONDOS */
+  /* 🌌 SUPERFICIES Y FONDOS (MODO OSCURO) */
   --color-bg-base: #0a0d14;            /* Fondo general oscuro inmersivo */
   --color-bg-surface: #111726;         /* Superficie de paneles y modales */
   --color-bg-surface-elevated: #1a2236;/* Paneles elevados */
@@ -83,6 +84,172 @@
 }
 
 /* ==========================================================================
+   ☀️ MODO CLARO / EXTERIORES (ALTO CONTRASTE BAJO EL SOL)
+   ========================================================================== */
+[data-theme="light"] {
+  --color-primary: #7c3aed;            /* Violeta intenso de alto contraste */
+  --color-primary-hover: #6d28d9;
+  --color-primary-active: #5b21b6;
+
+  --color-secondary: #0891b2;          /* Cyan profundo legible en luz solar */
+  --color-secondary-hover: #0e7490;
+
+  --color-accent: #f59e0b;             /* Ámbar brillante */
+  --color-accent-hover: #d97706;
+
+  --color-bg-base: #f1f5f9;            /* Fondo gris perla claro que no deslumbra */
+  --color-bg-surface: #ffffff;         /* Paneles blancos puros */
+  --color-bg-surface-elevated: #e2e8f0;/* Cabeceras y bloques destacados */
+  --color-bg-card: #ffffff;            /* Tarjetas blancas con borde definido */
+  --color-bg-card-hover: #f8fafc;
+  --color-bg-glass: rgba(255, 255, 255, 0.92);
+
+  --color-text-main: #0f172a;          /* Texto casi negro de máximo contraste */
+  --color-text-secondary: #334155;     /* Subtítulos oscuros */
+  --color-text-muted: #475569;         /* Detalles bien visibles */
+  --color-text-inverse: #ffffff;
+
+  --border-subtle: rgba(15, 23, 42, 0.14);
+  --border-medium: rgba(15, 23, 42, 0.25);
+  --border-highlight: rgba(124, 58, 237, 0.6);
+  --border-accent: rgba(217, 119, 6, 0.6);
+
+  --shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 6px 20px rgba(15, 23, 42, 0.12);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.18);
+  --shadow-glow-primary: 0 6px 20px rgba(124, 58, 237, 0.3);
+  --shadow-glow-accent: 0 6px 20px rgba(245, 158, 11, 0.35);
+}
+
+/* Adaptación automática de utilidades para Modo Claro (Exteriores) */
+[data-theme="light"] body {
+  background-color: var(--color-bg-base) !important;
+  color: var(--color-text-main) !important;
+}
+
+[data-theme="light"] .text-white {
+  color: var(--color-text-main) !important;
+}
+
+/* Mantener texto blanco dentro de botones con fondo primario, gradiente o insignias oscuras */
+[data-theme="light"] .keep-white,
+[data-theme="light"] .bg-violet-600,
+[data-theme="light"] .bg-rose-600,
+[data-theme="light"] .bg-gradient-to-tr {
+  color: #ffffff !important;
+}
+[data-theme="light"] .keep-white *,
+[data-theme="light"] .bg-violet-600 *,
+[data-theme="light"] .bg-rose-600 *,
+[data-theme="light"] .bg-gradient-to-tr * {
+  color: #ffffff !important;
+}
+
+[data-theme="light"] .text-slate-200,
+[data-theme="light"] .text-slate-300 {
+  color: #1e293b !important;
+}
+
+[data-theme="light"] .text-slate-400,
+[data-theme="light"] .text-slate-500 {
+  color: #475569 !important;
+}
+
+[data-theme="light"] .bg-slate-900,
+[data-theme="light"] .bg-slate-900\/80,
+[data-theme="light"] .bg-slate-900\/70,
+[data-theme="light"] .bg-slate-900\/60,
+[data-theme="light"] .bg-slate-900\/40,
+[data-theme="light"] .bg-slate-900\/90 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: var(--shadow-sm);
+}
+
+[data-theme="light"] .bg-slate-800,
+[data-theme="light"] .bg-slate-800\/80,
+[data-theme="light"] .bg-slate-800\/70,
+[data-theme="light"] .bg-slate-800\/60,
+[data-theme="light"] .bg-slate-800\/50,
+[data-theme="light"] .bg-slate-800\/40 {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+[data-theme="light"] .border-slate-800,
+[data-theme="light"] .border-slate-700,
+[data-theme="light"] .border-slate-700\/80,
+[data-theme="light"] .border-slate-700\/60,
+[data-theme="light"] .border-slate-700\/50 {
+  border-color: #cbd5e1 !important;
+}
+
+/* Estados coloreados legibles bajo luz solar */
+[data-theme="light"] .bg-violet-950,
+[data-theme="light"] .bg-violet-950\/70,
+[data-theme="light"] .bg-violet-950\/60,
+[data-theme="light"] .bg-violet-950\/40,
+[data-theme="light"] .bg-violet-950\/30,
+[data-theme="light"] .bg-violet-950\/20 {
+  background-color: #ede9fe !important;
+  border-color: #8b5cf6 !important;
+}
+[data-theme="light"] .text-violet-300,
+[data-theme="light"] .text-violet-400 {
+  color: #5b21b6 !important;
+}
+
+[data-theme="light"] .bg-amber-950\/60,
+[data-theme="light"] .bg-amber-950\/50,
+[data-theme="light"] .bg-amber-950\/40,
+[data-theme="light"] .bg-amber-950\/30,
+[data-theme="light"] .bg-amber-950\/20,
+[data-theme="light"] .bg-amber-500\/20,
+[data-theme="light"] .bg-amber-500\/15 {
+  background-color: #fef3c7 !important;
+  border-color: #f59e0b !important;
+}
+[data-theme="light"] .text-amber-300,
+[data-theme="light"] .text-amber-400 {
+  color: #b45309 !important;
+}
+
+[data-theme="light"] .bg-emerald-950,
+[data-theme="light"] .bg-emerald-950\/70,
+[data-theme="light"] .bg-emerald-600\/30 {
+  background-color: #d1fae5 !important;
+  border-color: #10b981 !important;
+}
+[data-theme="light"] .text-emerald-300,
+[data-theme="light"] .text-emerald-400 {
+  color: #065f46 !important;
+}
+
+[data-theme="light"] .bg-rose-950\/70,
+[data-theme="light"] .bg-rose-950\/60,
+[data-theme="light"] .bg-rose-950\/40 {
+  background-color: #ffe4e6 !important;
+  border-color: #f43f5e !important;
+}
+[data-theme="light"] .text-rose-300,
+[data-theme="light"] .text-rose-200,
+[data-theme="light"] .text-rose-400 {
+  color: #be123c !important;
+}
+
+[data-theme="light"] .bg-cyan-950\/60,
+[data-theme="light"] .bg-cyan-950\/30,
+[data-theme="light"] .bg-cyan-950\/20,
+[data-theme="light"] .bg-cyan-500\/20 {
+  background-color: #cffafe !important;
+  border-color: #06b6d4 !important;
+}
+[data-theme="light"] .text-cyan-300,
+[data-theme="light"] .text-cyan-400 {
+  color: #0e7490 !important;
+}
+
+/* ==========================================================================
    RESET Y AJUSTES ERGONÓMICOS PARA TABLET
    ========================================================================== */
 
@@ -100,9 +267,10 @@ html, body {
   color: var(--color-text-main);
   font-family: var(--font-sans);
   overflow-x: hidden;
-  user-select: none; /* Evita que al tocar rápido en tablet se seleccione texto accidentalmente */
+  user-select: none;
   -webkit-user-select: none;
-  touch-action: manipulation; /* Evita zoom accidental por doble tap en tablet */
+  touch-action: manipulation;
+  transition: background-color 200ms ease, color 200ms ease;
 }
 
 /* Scrollbar estilizada */

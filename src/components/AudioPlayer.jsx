@@ -153,7 +153,7 @@ export default function AudioPlayer({ audioUrl, isRevealed, artwork, title, arti
 
         {/* Botón flotante central de Play / Pause */}
         <button
-          className="absolute inset-0 m-auto w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110 active:scale-95 bg-black/60 backdrop-blur-sm text-white border border-white/20"
+          className="keep-white absolute inset-0 m-auto w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110 active:scale-95 bg-black/60 backdrop-blur-sm text-white border border-white/20"
           aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
         >
           {isPlaying ? <Pause className="w-6 h-6 fill-white" /> : <Play className="w-6 h-6 fill-white ml-0.5" />}
@@ -202,7 +202,7 @@ export default function AudioPlayer({ audioUrl, isRevealed, artwork, title, arti
           <h3 className="font-bold text-lg text-white">{title}</h3>
           <p className="text-sm font-medium text-slate-400">{artist}</p>
           <span 
-            className="inline-block mt-1 px-3 py-0.5 rounded-full text-xs font-black tracking-widest text-white shadow-md"
+            className="keep-white inline-block mt-1 px-3 py-0.5 rounded-full text-xs font-black tracking-widest text-white shadow-md"
             style={{ backgroundColor: 'var(--color-accent)' }}
           >
             {year}

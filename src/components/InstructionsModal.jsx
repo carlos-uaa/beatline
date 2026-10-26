@@ -198,7 +198,7 @@ export default function InstructionsModal({ isOpen, onClose }) {
         >
           <button
             onClick={onClose}
-            className="px-6 py-2.5 rounded-xl font-bold text-white shadow-lg transition-transform active:scale-95 flex items-center gap-2 cursor-pointer"
+            className="keep-white px-6 py-2.5 rounded-xl font-bold text-white shadow-lg transition-transform active:scale-95 flex items-center gap-2 cursor-pointer"
             style={{
               backgroundColor: 'var(--color-primary)',
               boxShadow: 'var(--shadow-glow-primary)'
