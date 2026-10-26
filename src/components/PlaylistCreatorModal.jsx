@@ -16,16 +16,23 @@ import {
 import { 
   searchSongsLive, 
   fetchTrackReleaseYear, 
-  importDeezerPlaylist, 
+  importDeezerPlaylist,
+  importSpotifyPlaylist,
   enrichTrack 
 } from '../services/musicService';
 import { saveCustomPlaylist } from '../services/playlistStorage';
 
 export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreated }) {
-  const [mode, setMode] = useState('search'); // 'search' | 'deezer' | 'bulk'
+  const [mode, setMode] = useState('spotify'); // 'spotify' | 'search' | 'bulk' | 'deezer'
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [tracks, setTracks] = useState([]);
+
+  // Importador de Spotify
+  const [spotifyUrl, setSpotifyUrl] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   // Buscador en vivo
   const [searchQuery, setSearchQuery] = useState('');
@@ -37,9 +44,6 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
 
   // Importador de Deezer
   const [deezerUrl, setDeezerUrl] = useState('');
-  const [isImporting, setIsImporting] = useState(false);
-  const [importStatus, setImportStatus] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
 
   // Importador por lista de texto
   const [bulkText, setBulkText] = useState('');
@@ -101,6 +105,26 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
     setTracks((prev) =>
       prev.map((t) => (t.id === id ? { ...t, year: isNaN(parsed) ? t.year : parsed } : t))
     );
+  };
+
+  const handleSpotifyImport = async () => {
+    if (!spotifyUrl.trim()) return;
+    setIsImporting(true);
+    setErrorMsg('');
+    try {
+      const imported = await importSpotifyPlaylist(spotifyUrl, (curr, total, name) => {
+        setImportStatus(`Importando canción (${curr}/${total}): ${name}`);
+      });
+      saveCustomPlaylist(imported);
+      stopPreview();
+      onPlaylistCreated(imported);
+      onClose();
+    } catch (err) {
+      setErrorMsg(err.message || 'No se pudo importar la playlist de Spotify. Verifica que sea pública.');
+    } finally {
+      setIsImporting(false);
+      setImportStatus('');
+    }
   };
 
   const handleDeezerImport = async () => {
@@ -216,7 +240,7 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
             <div>
               <h2 className="text-lg font-black text-white">Crear / Importar Playlist</h2>
               <p className="text-xs text-slate-400">
-                Arma tu propio mazo de canciones o importa una lista completa
+                Usa tu cuenta gratuita de Spotify, el buscador integrado o pega una lista
               </p>
             </div>
           </div>
@@ -233,134 +257,110 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
 
         {/* Pestañas de Método */}
         <div
-          className="flex border-b px-6 pt-2 gap-2 overflow-x-auto"
+          className="flex border-b px-4 sm:px-6 pt-2 gap-2 overflow-x-auto"
           style={{ borderColor: 'var(--border-subtle)' }}
         >
           <button
+            onClick={() => setMode('spotify')}
+            className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              mode === 'spotify'
+                ? 'border-emerald-500 text-emerald-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Link2 className="w-4 h-4 text-emerald-400" />
+            Importar de Spotify 🟢
+          </button>
+          <button
             onClick={() => setMode('search')}
-            className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 flex items-center gap-2 whitespace-nowrap ${
+            className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               mode === 'search'
                 ? 'border-violet-500 text-white'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <Search className="w-4 h-4" />
-            Buscador Interactivo ({tracks.length})
+            Buscador en la App ({tracks.length})
           </button>
           <button
             onClick={() => setMode('bulk')}
-            className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 flex items-center gap-2 whitespace-nowrap ${
+            className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               mode === 'bulk'
-                ? 'border-violet-500 text-white'
+                ? 'border-amber-400 text-amber-300'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <FileText className="w-4 h-4" />
-            Pegar Lista de Canciones
+            Pegar Lista de Texto
           </button>
           <button
             onClick={() => setMode('deezer')}
-            className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 flex items-center gap-2 whitespace-nowrap ${
+            className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               mode === 'deezer'
-                ? 'border-violet-500 text-white'
+                ? 'border-cyan-400 text-cyan-300'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <Link2 className="w-4 h-4" />
-            Importar Link de Deezer
+            Link de Deezer
           </button>
         </div>
 
         {/* Cuerpo del Modal */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-5">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
           {errorMsg && (
             <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/50 text-rose-200 text-xs font-medium">
               {errorMsg}
             </div>
           )}
 
-          {mode === 'deezer' && (
+          {/* MODO SPOTIFY (RECOMENDADO) */}
+          {mode === 'spotify' && (
             <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-violet-950/20 border border-violet-800/40 space-y-2">
-                <h4 className="font-bold text-sm text-violet-300 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" /> ¿Cómo importar desde Deezer?
+              <div className="p-4 rounded-2xl bg-emerald-950/30 border border-emerald-800/40 space-y-2">
+                <h4 className="font-bold text-sm text-emerald-300 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-emerald-400" /> ¡La forma más fácil y 100% gratuita!
                 </h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  1. Entra a <a href="https://www.deezer.com" target="_blank" rel="noreferrer" className="underline text-cyan-400">deezer.com</a> y busca cualquier playlist pública (o crea una tú mismo).<br />
-                  2. Copia el enlace de la playlist (ejemplo: <code className="text-amber-300">https://www.deezer.com/es/playlist/908622995</code>).<br />
-                  3. Pégalo aquí abajo y BeatLine descargará las canciones, portadas y años de lanzamiento automáticamente.
+                  No necesitas pagar nada en Deezer. Puedes armar tu playlist en la app gratuita de <strong>Spotify</strong> (o usar cualquier playlist pública de Spotify que te guste):<br />
+                  1. En Spotify, toca los 3 puntos de la playlist y dale a <strong>"Compartir" ➔ "Copiar enlace"</strong>.<br />
+                  2. Pégalo aquí abajo y BeatLine descargará todas las canciones, audios y años oficiales automáticamente.
                 </p>
               </div>
 
               <div className="space-y-3">
                 <label className="block text-xs font-bold uppercase text-slate-400">
-                  Enlace o ID de Playlist de Deezer
+                  Enlace de Playlist de Spotify
                 </label>
                 <input
                   type="text"
-                  value={deezerUrl}
-                  onChange={(e) => setDeezerUrl(e.target.value)}
-                  placeholder="https://www.deezer.com/es/playlist/..."
-                  className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:border-violet-500"
+                  value={spotifyUrl}
+                  onChange={(e) => setSpotifyUrl(e.target.value)}
+                  placeholder="https://open.spotify.com/playlist/..."
+                  className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:border-emerald-500"
                 />
 
                 {isImporting && (
-                  <div className="flex items-center gap-2 text-xs text-cyan-400 font-mono">
+                  <div className="flex items-center gap-2 text-xs text-emerald-400 font-mono">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    {importStatus || 'Importando canciones...'}
+                    {importStatus || 'Importando canciones de Spotify...'}
                   </div>
                 )}
 
                 <button
-                  onClick={handleDeezerImport}
-                  disabled={isImporting || !deezerUrl.trim()}
-                  className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-violet-600 hover:bg-violet-500 disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer"
+                  onClick={handleSpotifyImport}
+                  disabled={isImporting || !spotifyUrl.trim()}
+                  className="w-full py-3.5 rounded-xl font-bold text-sm text-slate-950 bg-emerald-400 hover:bg-emerald-300 disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20"
                 >
-                  {isImporting ? 'Importando Playlist...' : 'Importar Playlist Ahora'}
+                  {isImporting ? 'Importando Playlist de Spotify...' : 'Importar Playlist de Spotify Ahora'}
                 </button>
               </div>
             </div>
           )}
 
-          {mode === 'bulk' && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-cyan-950/20 border border-cyan-800/40 space-y-1">
-                <h4 className="font-bold text-sm text-cyan-300">
-                  Pega una lista rápida de canciones
-                </h4>
-                <p className="text-xs text-slate-300">
-                  Escribe o pega una canción por línea con el formato <strong>Artista - Canción</strong>. El sistema buscará el audio original y su año oficial de lanzamiento automáticamente.
-                </p>
-              </div>
-
-              <textarea
-                rows={7}
-                value={bulkText}
-                onChange={(e) => setBulkText(e.target.value)}
-                placeholder={`Ejemplo:\nSoda Stereo - Persiana Americana\nLuis Miguel - La Incondicional\nDaddy Yankee - Gasolina\nDuki - Givenchy`}
-                className="w-full p-4 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm font-mono focus:outline-none focus:border-violet-500"
-              />
-
-              {isImporting && (
-                <div className="flex items-center gap-2 text-xs text-amber-400 font-mono">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {importStatus}
-                </div>
-              )}
-
-              <button
-                onClick={handleBulkProcess}
-                disabled={isImporting || !bulkText.trim()}
-                className="w-full py-3 rounded-xl font-bold text-sm text-slate-950 bg-amber-400 hover:bg-amber-300 disabled:opacity-40 cursor-pointer"
-              >
-                {isImporting ? 'Procesando canciones...' : 'Buscar y Agregar Todas a mi Lista'}
-              </button>
-            </div>
-          )}
-
+          {/* MODO BUSCADOR INTEGRADO */}
           {mode === 'search' && (
-            <div className="space-y-5">
-              {/* Datos básicos de la playlist */}
+            <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
@@ -382,7 +382,7 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
                     type="text"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Ej. Rock, Pop y Cumbias para el domingo"
+                    placeholder="Ej. Rock, Pop y Cumbias para el fin de semana"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:border-violet-500"
                   />
                 </div>
@@ -394,7 +394,7 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Busca por artista y canción (ej. Duki Givenchy, Queen, BTS...)"
+                  placeholder="Busca por artista y canción (ej. Queen Bohemian, Duki, Shakira...)"
                   className="flex-1 px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:border-violet-500"
                 />
                 <button
@@ -411,9 +411,9 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
               {searchResults.length > 0 && (
                 <div className="space-y-2 bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
                   <span className="text-[11px] font-bold uppercase text-slate-400 px-1">
-                    Resultados (Puedes escuchar el audio antes de agregar)
+                    Resultados (Escucha el audio antes de agregar)
                   </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
                     {searchResults.map((item) => {
                       const isAdded = tracks.some((t) => t.deezerId === item.deezerId);
                       const isPlayingThis = previewPlayingUrl === item.previewUrl;
@@ -426,7 +426,7 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
                             <button
                               type="button"
                               onClick={() => togglePreview(item.previewUrl)}
-                              className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 group bg-slate-900"
+                              className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 group bg-slate-900 cursor-pointer"
                               title="Escuchar preview"
                             >
                               <img src={item.artwork} alt={item.title} className="w-full h-full object-cover" />
@@ -469,23 +469,23 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
                 </div>
               )}
 
-              {/* Canciones agregadas hasta ahora */}
+              {/* Canciones agregadas */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase text-slate-400">
                     Canciones en esta Playlist ({tracks.length})
                   </span>
                   <span className="text-[11px] text-slate-500">
-                    Puedes ajustar el año si es una reedición
+                    Puedes ajustar el año si es necesario
                   </span>
                 </div>
 
                 {tracks.length === 0 ? (
                   <div className="p-6 rounded-2xl border border-dashed border-slate-800 text-center text-xs text-slate-500">
-                    Aún no has agregado canciones. Usa el buscador de arriba o la pestaña "Pegar Lista".
+                    Aún no has agregado canciones. Busca canciones arriba o importa desde Spotify.
                   </div>
                 ) : (
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
                     {tracks.map((t, index) => (
                       <div
                         key={t.id}
@@ -512,7 +512,7 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
                           <button
                             type="button"
                             onClick={() => handleRemoveTrack(t.id)}
-                            className="p-1.5 text-slate-500 hover:text-rose-400"
+                            className="p-1.5 text-slate-500 hover:text-rose-400 cursor-pointer"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -522,6 +522,80 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* MODO LISTA DE TEXTO */}
+          {mode === 'bulk' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-800/40 space-y-1">
+                <h4 className="font-bold text-sm text-amber-300">
+                  Pega una lista de canciones desde tu bloc de notas o WhatsApp
+                </h4>
+                <p className="text-xs text-slate-300">
+                  Escribe una canción por línea con el formato <strong>Artista - Canción</strong>. El sistema buscará los audios y años oficiales automáticamente.
+                </p>
+              </div>
+
+              <textarea
+                rows={7}
+                value={bulkText}
+                onChange={(e) => setBulkText(e.target.value)}
+                placeholder={`Ejemplo:\nSoda Stereo - Persiana Americana\nLuis Miguel - La Incondicional\nDaddy Yankee - Gasolina\nDuki - Givenchy`}
+                className="w-full p-4 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm font-mono focus:outline-none focus:border-amber-500"
+              />
+
+              {isImporting && (
+                <div className="flex items-center gap-2 text-xs text-amber-400 font-mono">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {importStatus}
+                </div>
+              )}
+
+              <button
+                onClick={handleBulkProcess}
+                disabled={isImporting || !bulkText.trim()}
+                className="w-full py-3 rounded-xl font-bold text-sm text-slate-950 bg-amber-400 hover:bg-amber-300 disabled:opacity-40 cursor-pointer"
+              >
+                {isImporting ? 'Procesando canciones...' : 'Buscar y Agregar Todas a mi Lista'}
+              </button>
+            </div>
+          )}
+
+          {/* MODO DEEZER */}
+          {mode === 'deezer' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-2xl bg-cyan-950/20 border border-cyan-800/40 space-y-2">
+                <h4 className="font-bold text-sm text-cyan-300">
+                  Importar desde enlace de Deezer
+                </h4>
+                <p className="text-xs text-slate-300">
+                  Si tienes el link de cualquier playlist pública de Deezer en la web, pégalo aquí para importarla.
+                </p>
+              </div>
+
+              <input
+                type="text"
+                value={deezerUrl}
+                onChange={(e) => setDeezerUrl(e.target.value)}
+                placeholder="https://www.deezer.com/es/playlist/..."
+                className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white text-sm focus:outline-none focus:border-cyan-500"
+              />
+
+              {isImporting && (
+                <div className="flex items-center gap-2 text-xs text-cyan-400 font-mono">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {importStatus}
+                </div>
+              )}
+
+              <button
+                onClick={handleDeezerImport}
+                disabled={isImporting || !deezerUrl.trim()}
+                className="w-full py-3 rounded-xl font-bold text-sm text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-40 cursor-pointer"
+              >
+                {isImporting ? 'Importando...' : 'Importar de Deezer'}
+              </button>
             </div>
           )}
         </div>
@@ -536,7 +610,7 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
             }}
           >
             <span className="text-xs text-slate-400">
-              Mínimo requerido: <strong>3 canciones</strong> (Recomendado: 15+)
+              Mínimo: <strong>3 canciones</strong> (Recomendado: 15+)
             </span>
             <button
               type="button"

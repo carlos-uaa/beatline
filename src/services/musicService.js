@@ -320,8 +320,64 @@ export async function fetchTrackReleaseYear(deezerId) {
 }
 
 /**
- * Importa una Playlist pública de Deezer a partir de su URL o ID numérico
+ * Importa una Playlist pública de Spotify a partir de su URL o ID
  */
+export async function importSpotifyPlaylist(urlOrId, onProgress) {
+  const match = String(urlOrId).match(/playlist[/:]([a-zA-Z0-9]+)/);
+  const playlistId = match ? match[1] : String(urlOrId).trim();
+
+  if (!playlistId) {
+    throw new Error('No se encontró un enlace o ID válido de playlist de Spotify.');
+  }
+
+  const endpoint = `/api/spotify?id=${encodeURIComponent(playlistId)}`;
+  const res = await fetch(endpoint);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `Error al importar de Spotify (HTTP ${res.status})`);
+  }
+
+  const data = await res.json();
+  const rawTracks = (data.tracks || []).slice(0, 50); // Límite de 50 canciones para carga rápida
+  const tracks = [];
+
+  for (let i = 0; i < rawTracks.length; i++) {
+    const item = rawTracks[i];
+    if (onProgress) {
+      onProgress(i + 1, rawTracks.length, `${item.artist} - ${item.title}`);
+    }
+
+    // Enriquecer año y portada oficial
+    const enriched = await enrichTrack({
+      id: `sp-${item.id || i}`,
+      title: item.title,
+      artist: item.artist,
+      searchTerm: `${item.artist} ${item.title}`,
+      previewUrl: item.audioPreviewUrl || null
+    });
+
+    tracks.push({
+      id: `sp-${i}-${Date.now()}`,
+      title: enriched.resolvedTitle || item.title,
+      artist: enriched.resolvedArtist || item.artist,
+      year: enriched.year || 2020,
+      artwork: enriched.artwork,
+      searchTerm: `${item.artist} ${item.title}`
+    });
+  }
+
+  return {
+    id: `custom-sp-${playlistId}-${Date.now()}`,
+    title: data.title || 'Playlist de Spotify',
+    description: `Importada desde Spotify (${tracks.length} canciones)`,
+    cover:
+      data.cover ||
+      tracks[0]?.artwork ||
+      'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80',
+    tracks,
+    isCustom: true
+  };
+}
 export async function importDeezerPlaylist(urlOrId, onProgress) {
   const match = String(urlOrId).match(/(\d{6,15})/);
   if (!match) {
