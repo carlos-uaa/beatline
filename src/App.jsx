@@ -104,6 +104,7 @@ export default function App() {
   const [wasPassed, setWasPassed] = useState(false);
   const [duelWinnerIndex, setDuelWinnerIndex] = useState(null);
   const [duelRewardType, setDuelRewardType] = useState(null); // 'token' | 'card'
+  const [awardedTrackForDuel, setAwardedTrackForDuel] = useState(null);
 
   const [showInstructions, setShowInstructions] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -373,6 +374,7 @@ export default function App() {
     setExactYearBonusClaimed(false);
     setDuelWinnerIndex(null);
     setDuelRewardType(null);
+    setAwardedTrackForDuel(null);
 
     const tCount = nextTurnCount !== null ? nextTurnCount : turnCount + 1;
     setTurnCount(tCount);
@@ -812,28 +814,46 @@ export default function App() {
 
     playSuccessSound();
     const updated = [...players];
+    let trackGiven = null;
+
     if (type === 'token') {
       updated[playerIdx] = {
         ...target,
         tokens: Math.min(5, (target.tokens || 0) + 1)
       };
     } else {
-      const updatedCards = [...(target.cards || [])];
-      let insertIdx = 0;
-      while (insertIdx < updatedCards.length && updatedCards[insertIdx].year <= currentTrack.year) {
-        insertIdx++;
+      // Si el jugador del turno acertó, él ya tiene currentTrack en su tablero.
+      // Si el ganador del duelo es OTRA persona, le otorgamos una carta extra del mazo para no quitarle la suya a X.
+      // Si el jugador del turno falló, el ganador del duelo se lleva currentTrack.
+      if (isCorrect && playerIdx !== effectivePlayerIndex) {
+        if (deck.length > 0) {
+          trackGiven = deck.pop();
+        } else {
+          trackGiven = currentTrack;
+        }
+      } else {
+        trackGiven = currentTrack;
       }
-      updatedCards.splice(insertIdx, 0, currentTrack);
-      updated[playerIdx] = {
-        ...target,
-        cards: updatedCards,
-        score: updatedCards.length
-      };
+
+      if (trackGiven) {
+        const updatedCards = [...(target.cards || [])];
+        let insertIdx = 0;
+        while (insertIdx < updatedCards.length && updatedCards[insertIdx].year <= trackGiven.year) {
+          insertIdx++;
+        }
+        updatedCards.splice(insertIdx, 0, trackGiven);
+        updated[playerIdx] = {
+          ...target,
+          cards: updatedCards,
+          score: updatedCards.length
+        };
+      }
     }
 
     setPlayers(updated);
     setDuelWinnerIndex(playerIdx);
     setDuelRewardType(type);
+    setAwardedTrackForDuel(trackGiven);
 
     try {
       confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
@@ -852,8 +872,8 @@ export default function App() {
         ...target,
         tokens: Math.max(0, (target.tokens || 0) - 1)
       };
-    } else {
-      const updatedCards = (target.cards || []).filter((c) => c.id !== currentTrack.id);
+    } else if (awardedTrackForDuel) {
+      const updatedCards = (target.cards || []).filter((c) => c.id !== awardedTrackForDuel.id);
       updated[duelWinnerIndex] = {
         ...target,
         cards: updatedCards,
@@ -864,6 +884,7 @@ export default function App() {
     setPlayers(updated);
     setDuelWinnerIndex(null);
     setDuelRewardType(null);
+    setAwardedTrackForDuel(null);
   };
 
   // Anular carta si juegan con regla estricta y no supo la canción
@@ -1542,6 +1563,10 @@ export default function App() {
                           </button>
                         </div>
                       )}
+
+                      <p className="text-[10px] text-pink-300/70 text-center pt-0.5">
+                        🛡️ <strong>Turno protegido:</strong> {currentPlayer.name} juega su carta normalmente. El duelo premia en paralelo al más cercano sin quitarle el turno a nadie.
+                      </p>
                     </div>
                   )}
                 </div>

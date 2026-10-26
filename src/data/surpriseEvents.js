@@ -50,7 +50,7 @@ export const SURPRISE_EVENTS = [
     id: 'todos-juegan',
     title: '🔄 Duelo Relámpago: Todos Juegan',
     badge: 'Todos Juegan',
-    description: 'Antes de revelar, todos los demás jugadores dicen un año exacto en voz alta. ¡El que más se acerque al año real gana +1 ⚡ Ficha!',
+    description: '¡Nadie se distrae! Mientras el jugador en turno ubica su carta, los demás dicen un año en voz alta. El más cercano gana +1 ⚡ Ficha (o la carta si el jugador falla). ¡El jugador en turno no pierde su oportunidad!',
     color: '#ec4899',
     allPlayDuel: true
   },
