@@ -635,7 +635,7 @@ export default function App() {
   };
 
   // Validar colocación de la carta en la línea del tiempo
-  const handleReveal = () => {
+  const handleReveal = async () => {
     if (selectedSlot === null || !currentTrack) return;
 
     setViewingPlayerIndex(null);
@@ -709,15 +709,30 @@ export default function App() {
       const updatedCards = [...cards];
       updatedCards.splice(selectedSlot, 0, currentTrack);
 
-      // Si el evento es "Doble o Nada", gana 1 carta adicional del mazo
+      // Si el evento es "Doble o Nada", gana 1 carta adicional del mazo con año y carátula enriquecidos
       if (activeEvent?.rewardCards === 2 && deck.length > 0) {
-        const extraTrack = deck.pop();
-        if (extraTrack) {
-          let extraIdx = 0;
-          while (extraIdx < updatedCards.length && updatedCards[extraIdx].year <= extraTrack.year) {
-            extraIdx++;
+        const rawExtra = deck.pop();
+        if (rawExtra) {
+          try {
+            const enrichedExtra = await enrichTrack(rawExtra);
+            const resolvedYear =
+              Number(enrichedExtra?.year) || Number(rawExtra?.year) || 2010;
+            const finalizedExtra = {
+              ...rawExtra,
+              ...enrichedExtra,
+              year: resolvedYear
+            };
+            let extraIdx = 0;
+            while (
+              extraIdx < updatedCards.length &&
+              (Number(updatedCards[extraIdx].year) || 0) <= finalizedExtra.year
+            ) {
+              extraIdx++;
+            }
+            updatedCards.splice(extraIdx, 0, finalizedExtra);
+          } catch (e) {
+            console.error('Error enriqueciendo carta extra de Doble o Nada:', e);
           }
-          updatedCards.splice(extraIdx, 0, extraTrack);
         }
       }
 
@@ -818,7 +833,7 @@ export default function App() {
   };
 
   // Otorgar premio del Duelo Relámpago (Todos Juegan)
-  const handleAwardDuelWinner = (playerIdx, type = 'token') => {
+  const handleAwardDuelWinner = async (playerIdx, type = 'token') => {
     if (duelWinnerIndex !== null || !currentTrack) return;
     const target = players[playerIdx];
     if (!target) return;
@@ -838,7 +853,12 @@ export default function App() {
       // Si el jugador del turno falló, el ganador del duelo se lleva currentTrack.
       if (isCorrect && playerIdx !== effectivePlayerIndex) {
         if (deck.length > 0) {
-          trackGiven = deck.pop();
+          const rawTrack = deck.pop();
+          try {
+            trackGiven = await enrichTrack(rawTrack);
+          } catch {
+            trackGiven = rawTrack;
+          }
         } else {
           trackGiven = currentTrack;
         }
@@ -847,12 +867,17 @@ export default function App() {
       }
 
       if (trackGiven) {
+        const resolvedYear = Number(trackGiven.year) || 2010;
+        const finalizedTrack = { ...trackGiven, year: resolvedYear };
         const updatedCards = [...(target.cards || [])];
         let insertIdx = 0;
-        while (insertIdx < updatedCards.length && updatedCards[insertIdx].year <= trackGiven.year) {
+        while (
+          insertIdx < updatedCards.length &&
+          (Number(updatedCards[insertIdx].year) || 0) <= finalizedTrack.year
+        ) {
           insertIdx++;
         }
-        updatedCards.splice(insertIdx, 0, trackGiven);
+        updatedCards.splice(insertIdx, 0, finalizedTrack);
         updated[playerIdx] = {
           ...target,
           cards: updatedCards,

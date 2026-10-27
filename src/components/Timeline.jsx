@@ -9,7 +9,8 @@ export default function Timeline({
   isRoundCorrect = false,
   correctSlotIndex,
   eliminatedSlots = [], // Índices de ranuras descartadas por Pista 2
-  highlightTrackId = null // ID de la carta ganada este turno para resaltarla
+  highlightTrackId = null, // ID de la carta ganada este turno para resaltarla
+  highlightTrackIds = [] // Array opcional de IDs ganados (ej. Doble o Nada)
 }) {
   return (
     <div className="w-full py-2 overflow-x-auto select-none">
@@ -28,7 +29,10 @@ export default function Timeline({
         />
 
         {cards.map((card, idx) => {
-          const isNewlyAdded = isRevealed && isRoundCorrect && card.id === highlightTrackId;
+          const isNewlyAdded =
+            isRevealed &&
+            isRoundCorrect &&
+            (card.id === highlightTrackId || highlightTrackIds.includes(card.id));
           return (
             <React.Fragment key={card.id || `${card.title}-${idx}`}>
               {/* Carta del jugador en su línea de tiempo */}
@@ -50,7 +54,7 @@ export default function Timeline({
                     className="px-2 py-0.5 rounded-full text-xs font-black tracking-widest text-slate-950 font-mono shadow-sm"
                     style={{ backgroundColor: isNewlyAdded ? '#34d399' : 'var(--color-accent)' }}
                   >
-                    {card.year}
+                    {card.year || '¿?'}
                   </span>
                   {isNewlyAdded ? (
                     <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase bg-emerald-400 text-slate-950 font-mono shadow-sm animate-pulse">
@@ -93,7 +97,7 @@ export default function Timeline({
                 label={
                   idx === cards.length - 1 
                     ? "Después de todo" 
-                    : `Entre ${card.year} y ${cards[idx + 1]?.year || '...'}`
+                    : `Entre ${card.year || '¿?'} y ${cards[idx + 1]?.year || '...'}`
                 }
               />
             </React.Fragment>
