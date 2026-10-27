@@ -21,7 +21,9 @@ import {
   Clock,
   Lightbulb,
   Dices,
-  RefreshCw
+  RefreshCw,
+  Trophy,
+  EyeOff
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -105,6 +107,7 @@ export default function App() {
   const [duelWinnerIndex, setDuelWinnerIndex] = useState(null);
   const [duelRewardType, setDuelRewardType] = useState(null); // 'token' | 'card'
   const [awardedTrackForDuel, setAwardedTrackForDuel] = useState(null);
+  const [hostPeekSolution, setHostPeekSolution] = useState(false); // Mirilla secreta del Host
 
   const [showInstructions, setShowInstructions] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -375,6 +378,7 @@ export default function App() {
     setDuelWinnerIndex(null);
     setDuelRewardType(null);
     setAwardedTrackForDuel(null);
+    setHostPeekSolution(false);
 
     const tCount = nextTurnCount !== null ? nextTurnCount : turnCount + 1;
     setTurnCount(tCount);
@@ -574,6 +578,13 @@ export default function App() {
     setPlayers(updatedPlayers);
 
     await prepareNextTurn(deck, activePlayerIndex);
+  };
+
+  // Cambiar canción gratis (0 ⚡) por fallo de audio o enlace no disponible
+  const handleSkipBrokenTrack = async () => {
+    if (isRevealed) return;
+    playTokenSound();
+    await prepareNextTurn(deck, activePlayerIndex, null, turnCount);
   };
 
   // Acción de Ficha: Canjear 3 ⚡ por Carta
@@ -885,6 +896,7 @@ export default function App() {
     setDuelWinnerIndex(null);
     setDuelRewardType(null);
     setAwardedTrackForDuel(null);
+    setHostPeekSolution(false);
   };
 
   // Anular carta si juegan con regla estricta y no supo la canción
@@ -936,9 +948,9 @@ export default function App() {
     }
     if (!isRevealed && selectedSlot === null) {
       if (activeEvent?.allPlayDuel) {
-        return `¡Duelo Relámpago activo! Pide a todos los jugadores que digan su año estimado en voz alta. Luego pregúntale a ${currentPlayer.name} entre qué cartas coloca la suya.`;
+        return `¡Duelo Relámpago activo! Pide a todos que digan su año estimado en voz alta. (Pulsa '👁️ Ver Solución' si quieres comprobar títulos en secreto). Pregúntale a ${currentPlayer.name} entre qué cartas coloca la suya.`;
       }
-      return `La música está sonando. Pregúntale a ${currentPlayer.name}: "¿Sabes qué canción es? ¿Entre qué dos cartas de tu tablero la quieres colocar?" (Toca la ranura [+] que te indique).`;
+      return `La música está sonando. Pregúntale a ${currentPlayer.name}: "¿Sabes qué canción es? ¿Entre qué dos cartas la quieres colocar?" (Usa '👁️ Ver Solución' si te dicen el nombre y quieres confirmar en secreto).`;
     }
     if (!isRevealed && selectedSlot !== null) {
       return `${currentPlayer.name} ya eligió su posición. Pregunta a la mesa: "¿Alguien quiere gastar 1⚡ para robar la canción antes de que revele?" Si nadie roba, pulsa "¡Revelar Año y Canción!".`;
@@ -1094,31 +1106,65 @@ export default function App() {
             {/* Guion del Presentador para el Modo Maestro de Ceremonias */}
             {playFormat === 'host' && (
               <div 
-                className="w-full p-3 sm:p-3.5 rounded-2xl border shadow-lg flex items-start gap-3 animate-fadeIn"
+                className="w-full p-3 sm:p-3.5 rounded-2xl border shadow-lg flex flex-col gap-2.5 animate-fadeIn"
                 style={{ 
                   backgroundColor: 'var(--color-bg-surface-elevated)', 
                   borderColor: 'var(--color-accent)' 
                 }}
               >
-                <div 
-                  className="p-2 rounded-xl text-slate-950 font-black shrink-0 shadow-sm"
-                  style={{ backgroundColor: 'var(--color-accent)' }}
-                >
-                  <Mic className="w-4 h-4" />
+                <div className="flex items-start gap-3">
+                  <div 
+                    className="p-2 rounded-xl text-slate-950 font-black shrink-0 shadow-sm"
+                    style={{ backgroundColor: 'var(--color-accent)' }}
+                  >
+                    <Mic className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <h4 className="text-[11px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                        <span>🎙️ Guion del Anfitrión / Presentador</span>
+                      </h4>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {/* Botón para espiar / ocultar la solución en secreto para el Host */}
+                        {!isRevealed && (
+                          <button
+                            type="button"
+                            onClick={() => setHostPeekSolution(!hostPeekSolution)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-bold cursor-pointer transition-all active:scale-95"
+                            title="Mira el título y artista en secreto para confirmar si el jugador la adivinó verbalmente"
+                          >
+                            {hostPeekSolution ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            <span>{hostPeekSolution ? 'Ocultar Tarjeta' : '👁️ Ver Solución (Host)'}</span>
+                          </button>
+                        )}
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 font-mono font-bold border border-amber-500/30">
+                          Turno de {currentPlayer.name}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs sm:text-sm text-slate-200 mt-1 leading-relaxed font-semibold">
+                      {getHostScriptPrompt()}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className="text-[11px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                      <span>🎙️ Guion del Anfitrión / Presentador</span>
-                    </h4>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 font-mono font-bold border border-amber-500/30 shrink-0">
-                      Turno de {currentPlayer.name}
+
+                {/* Mirilla secreta de solución para el Host */}
+                {hostPeekSolution && currentTrack && !isRevealed && (
+                  <div className="p-2.5 rounded-xl bg-amber-950/80 border border-amber-400/60 flex items-center justify-between gap-2 text-xs animate-fadeIn">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="px-2 py-0.5 rounded-lg bg-amber-400 text-slate-950 font-black font-mono text-xs shadow-sm shrink-0">
+                        {currentTrack.year}
+                      </span>
+                      <div className="truncate">
+                        <span className="font-black text-white block truncate">"{currentTrack.title}"</span>
+                        <span className="text-amber-200 text-[11px] truncate">{currentTrack.artist}</span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/25 text-amber-300 border border-amber-500/40 font-bold uppercase tracking-wider shrink-0">
+                      🤫 Solo tú ves esto
                     </span>
                   </div>
-                  <p className="text-xs sm:text-sm text-slate-200 mt-1 leading-relaxed font-semibold">
-                    {getHostScriptPrompt()}
-                  </p>
-                </div>
+                )}
               </div>
             )}
 
@@ -1308,6 +1354,17 @@ export default function App() {
                     </button>
                   )}
 
+                  {/* Cambiar canción gratis si el audio no se puede reproducir (0 ⚡) */}
+                  <button
+                    type="button"
+                    onClick={handleSkipBrokenTrack}
+                    className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/40 flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                    title="Si el audio falló o no suena, cámbiala gratis sin gastar fichas ni perder turno"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-rose-400" />
+                    Audio Roto (0 ⚡)
+                  </button>
+
                   {/* Canjear 3 fichas por carta */}
                   {(currentPlayer.tokens || 0) >= 3 && (
                     <button
@@ -1337,6 +1394,7 @@ export default function App() {
               artistHint={hint1Active ? getArtistHintText() : null}
               isUrgentTimer={isUrgentTimer}
               onPlaybackStart={() => setHasStartedPlayback(true)}
+              onSkipBrokenTrack={handleSkipBrokenTrack}
             />
 
             {/* Acciones de Revelar / Resultado y Bonus Verbal */}

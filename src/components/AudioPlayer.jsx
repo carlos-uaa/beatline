@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, RotateCcw, Volume2, VolumeX, Disc3, Eye } from 'lucide-react';
+import { Play, Pause, RotateCcw, Volume2, VolumeX, Disc3, Eye, RefreshCw, AlertCircle } from 'lucide-react';
 
 export default function AudioPlayer({ 
   audioUrl, 
@@ -12,7 +12,8 @@ export default function AudioPlayer({
   blurredArtwork = false, // Para Pista 1 comodín
   artistHint = null, // Ej. "D... (2020s)"
   isUrgentTimer = false, // Parpadeo cuando quedan <= 10s
-  onPlaybackStart = null // Callback cuando inicia la reproducción para activar timer
+  onPlaybackStart = null, // Callback cuando inicia la reproducción para activar timer
+  onSkipBrokenTrack = null // Callback para saltar gratis si el audio no se puede reproducir
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -277,10 +278,24 @@ export default function AudioPlayer({
         </div>
       )}
 
-      {hasError && (
-        <p className="text-xs text-rose-400 mt-1 text-center">
-          Audio no disponible para esta pista. Puedes jugar deduciendo con el título si lo revelas.
-        </p>
+      {hasError && !isRevealed && (
+        <div className="mt-3 p-3 rounded-2xl bg-rose-950/80 border border-rose-500/60 text-center space-y-2 animate-fadeIn max-w-xs shadow-lg">
+          <div className="flex items-center justify-center gap-1.5 text-xs text-rose-300 font-bold">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>Audio no disponible en esta pista</span>
+          </div>
+          {onSkipBrokenTrack && (
+            <button
+              type="button"
+              onClick={onSkipBrokenTrack}
+              className="w-full py-1.5 px-3 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-md flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+              title="Cambia a la siguiente canción sin costo ni penalización"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Cambiar Canción Gratis (0 ⚡)</span>
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
