@@ -319,10 +319,13 @@ export default function App() {
 
     const shuffled = shuffleDeck(chosenPlaylist.tracks);
 
+    // Aleatorizar el orden de turnos de los jugadores al comenzar
+    const randomizedPlayers = shuffleDeck(initialPlayers);
+
     const preparedPlayers = [];
     let currentDeck = [...shuffled];
 
-    for (let p of initialPlayers) {
+    for (let p of randomizedPlayers) {
       if (currentDeck.length === 0) {
         currentDeck = shuffleDeck(chosenPlaylist.tracks);
       }
@@ -330,7 +333,7 @@ export default function App() {
       const enriched = await enrichTrack(initialTrack);
       preparedPlayers.push({
         ...p,
-        tokens: p.tokens !== undefined ? p.tokens : diff === 'expert' ? 1 : 2,
+        tokens: diff === 'expert' ? 1 : 2,
         cards: [enriched],
         score: 1,
         stats: { attempts: 0, hits: 0, steals: 0, hintsUsed: 0 }

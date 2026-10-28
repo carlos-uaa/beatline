@@ -162,7 +162,7 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
               Jugadores ({players.length})
             </h3>
             <p className="text-[11px] text-slate-400">
-              Cada jugador inicia con <strong>{difficulty === 'expert' ? '1 Ficha' : '2 Fichas'} ⚡</strong> para robar turnos o pedir pistas
+              Cada jugador inicia con <strong>{difficulty === 'expert' ? '1 Ficha' : '2 Fichas'} ⚡</strong> • 🎲 El orden de turnos se sorteará al azar
             </p>
           </div>
           <button
