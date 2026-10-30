@@ -9,6 +9,50 @@
 // por lo que no deben guardarse por días en localStorage, pero los años y metadatos sí).
 const sessionAudioCache = new Map();
 const METADATA_CACHE_KEY = 'beatline_meta_cache_v2';
+export const USER_CORRECTIONS_KEY = 'beatline_user_corrections_v1';
+
+export function getUserCorrections() {
+  try {
+    const raw = localStorage.getItem(USER_CORRECTIONS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveUserTrackCorrection(artist, title, data) {
+  try {
+    const key = `${artist} - ${title}`.toLowerCase().trim();
+    const all = getUserCorrections();
+    all[key] = {
+      year: Number(data.year),
+      artist: data.artist || artist,
+      title: data.title || title,
+      updatedAt: Date.now()
+    };
+    localStorage.setItem(USER_CORRECTIONS_KEY, JSON.stringify(all));
+
+    // Guardar también en la caché persistente de metadatos
+    saveMetadataCache(key, {
+      year: Number(data.year)
+    });
+
+    // Actualizar en la caché en memoria de la sesión
+    if (sessionAudioCache.has(key)) {
+      const prev = sessionAudioCache.get(key);
+      sessionAudioCache.set(key, {
+        ...prev,
+        year: Number(data.year),
+        artist: data.artist || prev.artist,
+        title: data.title || prev.title,
+        resolvedArtist: data.artist || prev.resolvedArtist,
+        resolvedTitle: data.title || prev.resolvedTitle
+      });
+    }
+  } catch (e) {
+    console.error('Error saving user track correction:', e);
+  }
+}
 
 function getMetadataCache() {
   try {
@@ -166,9 +210,22 @@ export async function enrichTrack(track) {
   } catch {}
 
   const cacheKey = `${track.artist} - ${track.title}`.toLowerCase().trim();
+  const userCorrections = getUserCorrections();
+  const userOverride = userCorrections[cacheKey];
 
   if (sessionAudioCache.has(cacheKey)) {
-    return sessionAudioCache.get(cacheKey);
+    const cached = sessionAudioCache.get(cacheKey);
+    if (userOverride) {
+      return {
+        ...cached,
+        year: Number(userOverride.year) || cached.year,
+        artist: userOverride.artist || cached.artist,
+        title: userOverride.title || cached.title,
+        resolvedArtist: userOverride.artist || cached.resolvedArtist,
+        resolvedTitle: userOverride.title || cached.resolvedTitle
+      };
+    }
+    return cached;
   }
 
   const metaCache = getMetadataCache()[cacheKey];
@@ -190,20 +247,55 @@ export async function enrichTrack(track) {
       );
 
       if (best && best.preview) {
-        let releaseYear = track.year || metaCache?.year;
+        let releaseYear = userOverride?.year || track.year || metaCache?.year;
 
-        // Si es una canción de una playlist personalizada sin año fijo, consultamos el detalle del track en Deezer
-        if (!releaseYear && best.id) {
+        // Si es una canción de una playlist personalizada sin año fijo, consultamos el detalle del track en Deezer y contrastamos con iTunes
+        if (!releaseYear) {
+          let deezerYear = null;
+          if (best.id) {
+            try {
+              const detail = await deezerJsonp(`/track/${best.id}`);
+              const dateStr = detail?.release_date || detail?.album?.release_date;
+              if (dateStr) {
+                const parsedYear = parseInt(dateStr.slice(0, 4), 10);
+                if (!isNaN(parsedYear) && parsedYear > 1920) {
+                  deezerYear = parsedYear;
+                }
+              }
+            } catch {}
+          }
+
+          // Consultar iTunes en paralelo para contrastar contra reediciones o compilaciones póstumas
+          let itunesYear = null;
           try {
-            const detail = await deezerJsonp(`/track/${best.id}`);
-            const dateStr = detail?.release_date || detail?.album?.release_date;
-            if (dateStr) {
-              const parsedYear = new Date(dateStr).getFullYear();
-              if (!isNaN(parsedYear) && parsedYear > 1900) {
-                releaseYear = parsedYear;
+            const itRes = await fetch(
+              `https://itunes.apple.com/search?term=${encodeURIComponent(cleanQuery)}&entity=song&limit=5`
+            );
+            if (itRes.ok) {
+              const itData = await itRes.json();
+              const itBest = pickBestResult(
+                itData.results || [],
+                mainArtist,
+                track.title,
+                (it) => it.artistName,
+                (it) => it.trackName
+              );
+              if (itBest?.releaseDate) {
+                const parsed = new Date(itBest.releaseDate).getFullYear();
+                if (!isNaN(parsed) && parsed > 1920) {
+                  itunesYear = parsed;
+                }
               }
             }
           } catch {}
+
+          // Si Deezer y iTunes arrojan años válidos, las reediciones/remasterizaciones/recopilatorios
+          // siempre tienen una fecha posterior a la grabación original. El año más antiguo es el original.
+          if (deezerYear && itunesYear) {
+            releaseYear = Math.min(deezerYear, itunesYear);
+          } else {
+            releaseYear = deezerYear || itunesYear || 2020;
+          }
         }
 
         const artwork =
@@ -217,8 +309,8 @@ export async function enrichTrack(track) {
           previewUrl: best.preview,
           artwork: artwork || track.artwork,
           year: releaseYear || 2020,
-          resolvedArtist: best.artist?.name || track.artist,
-          resolvedTitle: best.title || track.title
+          resolvedArtist: userOverride?.artist || best.artist?.name || track.artist,
+          resolvedTitle: userOverride?.title || best.title || track.title
         };
 
         saveMetadataCache(cacheKey, {
@@ -251,6 +343,7 @@ export async function enrichTrack(track) {
         if (best && best.previewUrl) {
           const artwork = (best.artworkUrl100 || '').replace('100x100bb', '600x600bb');
           const releaseYear =
+            userOverride?.year ||
             track.year ||
             (best.releaseDate ? new Date(best.releaseDate).getFullYear() : 2020);
 
@@ -258,7 +351,9 @@ export async function enrichTrack(track) {
             ...track,
             previewUrl: best.previewUrl,
             artwork,
-            year: releaseYear
+            year: releaseYear,
+            resolvedArtist: userOverride?.artist || best.artistName || track.artist,
+            resolvedTitle: userOverride?.title || best.trackName || track.title
           };
           sessionAudioCache.set(cacheKey, enriched);
           return enriched;
@@ -276,7 +371,9 @@ export async function enrichTrack(track) {
       track.artwork ||
       'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80',
     previewUrl: null,
-    year: track.year || metaCache?.year || 2020
+    year: userOverride?.year || track.year || metaCache?.year || 2020,
+    artist: userOverride?.artist || track.artist,
+    title: userOverride?.title || track.title
   };
 }
 

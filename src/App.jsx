@@ -23,7 +23,8 @@ import {
   Dices,
   RefreshCw,
   Trophy,
-  EyeOff
+  EyeOff,
+  Wrench
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -33,9 +34,10 @@ import AudioPlayer from './components/AudioPlayer';
 import Timeline from './components/Timeline';
 import GameOverModal from './components/GameOverModal';
 import SurpriseEventModal from './components/SurpriseEventModal';
+import TrackCorrectionModal from './components/TrackCorrectionModal';
 
 import { getPlaylistById } from './services/playlistStorage';
-import { enrichTrack } from './services/musicService';
+import { enrichTrack, saveUserTrackCorrection } from './services/musicService';
 import {
   saveGameSession,
   loadGameSession,
@@ -108,6 +110,8 @@ export default function App() {
   const [duelRewardType, setDuelRewardType] = useState(null); // 'token' | 'card'
   const [awardedTrackForDuel, setAwardedTrackForDuel] = useState(null);
   const [hostPeekSolution, setHostPeekSolution] = useState(false); // Mirilla secreta del Host
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+  const [toleranceNotice, setToleranceNotice] = useState(null);
 
   const [showInstructions, setShowInstructions] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -382,6 +386,8 @@ export default function App() {
     setDuelRewardType(null);
     setAwardedTrackForDuel(null);
     setHostPeekSolution(false);
+    setToleranceNotice(null);
+    setShowCorrectionModal(false);
 
     const tCount = nextTurnCount !== null ? nextTurnCount : turnCount + 1;
     setTurnCount(tCount);
@@ -651,13 +657,15 @@ export default function App() {
 
     // Calcular todos los slots válidos cronológicamente
     const validSlots = [];
+    let isExactMatch = false;
     for (let s = 0; s <= cards.length; s++) {
-      const prevYear = s > 0 ? cards[s - 1].year : -Infinity;
-      const nextYear = s < cards.length ? cards[s].year : Infinity;
+      const prevYear = s > 0 ? Number(cards[s - 1].year) : -Infinity;
+      const nextYear = s < cards.length ? Number(cards[s].year) : Infinity;
       
       const exactValid = currentTrack.year >= prevYear && currentTrack.year <= nextYear;
       if (exactValid) {
         validSlots.push(s);
+        if (s === selectedSlot) isExactMatch = true;
       } else if (tolerance > 0) {
         const distPrev = s > 0 ? Math.abs(currentTrack.year - prevYear) : Infinity;
         const distNext = s < cards.length ? Math.abs(currentTrack.year - nextYear) : Infinity;
@@ -711,6 +719,16 @@ export default function App() {
 
       const updatedCards = [...cards];
       updatedCards.splice(selectedSlot, 0, currentTrack);
+      // REORDENAR SIEMPRE cronológicamente para evitar que el margen de error desordene el tablero
+      updatedCards.sort((a, b) => (Number(a.year) || 0) - (Number(b.year) || 0));
+
+      if (!isExactMatch) {
+        setToleranceNotice(
+          `✨ ¡Válido por margen de error! La canción es de ${currentTrack.year} y se reacomodó en su orden cronológico en tu tablero.`
+        );
+      } else {
+        setToleranceNotice(null);
+      }
 
       // Si el evento es "Doble o Nada", gana 1 carta adicional del mazo con año y carátula enriquecidos
       if (activeEvent?.rewardCards === 2 && deck.length > 0) {
@@ -925,6 +943,8 @@ export default function App() {
     setDuelRewardType(null);
     setAwardedTrackForDuel(null);
     setHostPeekSolution(false);
+    setToleranceNotice(null);
+    setShowCorrectionModal(false);
   };
 
   // Anular carta si juegan con regla estricta y no supo la canción
@@ -941,6 +961,99 @@ export default function App() {
     setPlayers(updatedPlayers);
     setCardRevokedThisTurn(true);
     setIsCorrect(false);
+    setToleranceNotice(null);
+  };
+
+  // Guardar corrección manual de datos de la canción (Año / Artista / Título)
+  const handleSaveTrackCorrection = ({ year, title, artist, awardCardToPlayer }) => {
+    if (!currentTrack) return;
+    const correctedYear = Number(year) || currentTrack.year;
+    const correctedTitle = title.trim() || currentTrack.title;
+    const correctedArtist = artist.trim() || currentTrack.artist;
+
+    // 1. Guardar permanentemente en caché de correcciones del usuario
+    saveUserTrackCorrection(currentTrack.artist, currentTrack.title, {
+      year: correctedYear,
+      title: correctedTitle,
+      artist: correctedArtist
+    });
+    saveUserTrackCorrection(correctedArtist, correctedTitle, {
+      year: correctedYear,
+      title: correctedTitle,
+      artist: correctedArtist
+    });
+
+    const updatedTrack = {
+      ...currentTrack,
+      year: correctedYear,
+      title: correctedTitle,
+      artist: correctedArtist,
+      resolvedTitle: correctedTitle,
+      resolvedArtist: correctedArtist
+    };
+    setCurrentTrack(updatedTrack);
+
+    if (awardCardToPlayer) {
+      playSuccessSound();
+      try {
+        confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+      } catch {}
+
+      const updatedPlayers = [...players];
+      const targetP = updatedPlayers[effectivePlayerIndex];
+      const currentCards = targetP.cards || [];
+
+      let updatedCards = [...currentCards];
+      const existingIdx = updatedCards.findIndex((c) => c.id === currentTrack.id);
+      if (existingIdx >= 0) {
+        updatedCards[existingIdx] = updatedTrack;
+      } else {
+        updatedCards.push(updatedTrack);
+      }
+      // Reordenar cronológicamente siempre
+      updatedCards.sort((a, b) => (Number(a.year) || 0) - (Number(b.year) || 0));
+
+      const prevStats = targetP.stats || { attempts: 0, hits: 0, steals: 0, hintsUsed: 0 };
+      updatedPlayers[effectivePlayerIndex] = {
+        ...targetP,
+        cards: updatedCards,
+        score: updatedCards.length,
+        stats: {
+          ...prevStats,
+          attempts: isCorrect ? prevStats.attempts : prevStats.attempts + 1,
+          hits: isCorrect ? prevStats.hits : prevStats.hits + 1
+        }
+      };
+
+      setPlayers(updatedPlayers);
+      setIsCorrect(true);
+      setWasPassed(false);
+      setToleranceNotice(`🛠️ Carta otorgada tras corregir el año oficial a ${correctedYear}.`);
+    } else {
+      // Solo actualizar datos de la canción en el tablero si ya estaba ganada
+      const updatedPlayers = [...players];
+      const targetP = updatedPlayers[effectivePlayerIndex];
+      if (targetP?.cards) {
+        let cardsUpdated = false;
+        const newCards = targetP.cards.map((c) => {
+          if (c.id === currentTrack.id) {
+            cardsUpdated = true;
+            return updatedTrack;
+          }
+          return c;
+        });
+        if (cardsUpdated) {
+          newCards.sort((a, b) => (Number(a.year) || 0) - (Number(b.year) || 0));
+          updatedPlayers[effectivePlayerIndex] = {
+            ...targetP,
+            cards: newCards
+          };
+          setPlayers(updatedPlayers);
+        }
+      }
+    }
+
+    setShowCorrectionModal(false);
   };
 
   // Pasar al siguiente turno
@@ -1188,9 +1301,20 @@ export default function App() {
                         <span className="text-amber-200 text-[11px] truncate">{currentTrack.artist}</span>
                       </div>
                     </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/25 text-amber-300 border border-amber-500/40 font-bold uppercase tracking-wider shrink-0">
-                      🤫 Solo tú ves esto
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setShowCorrectionModal(true)}
+                        className="px-2 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 text-amber-300 border border-amber-500/40 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                        title="Corregir año o datos de esta canción si Deezer tiene un error"
+                      >
+                        <Wrench className="w-3 h-3 text-amber-400" />
+                        <span>Corregir</span>
+                      </button>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/25 text-amber-300 border border-amber-500/40 font-bold uppercase tracking-wider shrink-0">
+                        🤫 Solo tú ves esto
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1521,9 +1645,9 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Validación Verbal Familiar (solo si no fue turno pasado) */}
-                  {!wasPassed && (
-                    <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+                  {/* Validación Verbal Familiar y Corrección de Datos de Deezer */}
+                  <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+                    {!wasPassed && (
                       <button
                         type="button"
                         disabled={bonusClaimedThisTurn}
@@ -1539,38 +1663,49 @@ export default function App() {
                           ? '¡+1 ⚡ Ficha entregada por acertar la canción!'
                           : '¿Dijo bien Canción y Artista en voz alta? (+1 ⚡)'}
                       </button>
+                    )}
 
-                      {isCorrect && !cardRevokedThisTurn && (
-                        <button
-                          type="button"
-                          onClick={handleRevokeCardForNotKnowingSong}
-                          className="px-3 py-1.5 rounded-xl font-semibold bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/50 text-rose-300 flex items-center gap-1 cursor-pointer"
-                          title="Toca aquí si la regla familiar exige adivinar la canción para quedársela"
-                        >
-                          <Undo2 className="w-3.5 h-3.5" />
-                          No se supo la canción (Quitar carta)
-                        </button>
-                      )}
+                    {/* Botón para corregir errores de Deezer (año de reedición/recopilatorio póstumo o nombre) */}
+                    <button
+                      type="button"
+                      onClick={() => setShowCorrectionModal(true)}
+                      className="px-3 py-1.5 rounded-xl font-bold border flex items-center gap-1.5 transition-all cursor-pointer bg-slate-800 hover:bg-slate-700 border-amber-500/40 text-amber-300"
+                      title="Si Deezer tiene mal el año o artista (ej. reedición póstuma), corrígelo aquí y dale la carta al jugador"
+                    >
+                      <Wrench className="w-3.5 h-3.5 text-amber-400" />
+                      <span>¿Error de Deezer? Corregir Año</span>
+                    </button>
 
-                      {activeEvent?.exactYearBonus && isCorrect && !cardRevokedThisTurn && (
-                        <button
-                          type="button"
-                          disabled={exactYearBonusClaimed}
-                          onClick={handleAwardExactYearBonus}
-                          className={`px-3 py-1.5 rounded-xl font-bold border flex items-center gap-1.5 transition-all cursor-pointer ${
-                            exactYearBonusClaimed
-                              ? 'bg-purple-950/40 border-purple-500/40 text-purple-300'
-                              : 'bg-slate-800 hover:bg-slate-700 border-purple-500/40 text-purple-300'
-                          }`}
-                        >
-                          <Trophy className="w-3.5 h-3.5 text-purple-400" />
-                          {exactYearBonusClaimed
-                            ? `¡+${activeEvent.exactYearBonus} ⚡ Entregadas por Año Exacto!`
-                            : `¿Dijo el año exacto (${currentTrack.year})? (+${activeEvent.exactYearBonus} ⚡)`}
-                        </button>
-                      )}
-                    </div>
-                  )}
+                    {!wasPassed && isCorrect && !cardRevokedThisTurn && (
+                      <button
+                        type="button"
+                        onClick={handleRevokeCardForNotKnowingSong}
+                        className="px-3 py-1.5 rounded-xl font-semibold bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/50 text-rose-300 flex items-center gap-1 cursor-pointer"
+                        title="Toca aquí si la regla familiar exige adivinar la canción para quedársela"
+                      >
+                        <Undo2 className="w-3.5 h-3.5" />
+                        No se supo la canción (Quitar carta)
+                      </button>
+                    )}
+
+                    {!wasPassed && activeEvent?.exactYearBonus && isCorrect && !cardRevokedThisTurn && (
+                      <button
+                        type="button"
+                        disabled={exactYearBonusClaimed}
+                        onClick={handleAwardExactYearBonus}
+                        className={`px-3 py-1.5 rounded-xl font-bold border flex items-center gap-1.5 transition-all cursor-pointer ${
+                          exactYearBonusClaimed
+                            ? 'bg-purple-950/40 border-purple-500/40 text-purple-300'
+                            : 'bg-slate-800 hover:bg-slate-700 border-purple-500/40 text-purple-300'
+                        }`}
+                      >
+                        <Trophy className="w-3.5 h-3.5 text-purple-400" />
+                        {exactYearBonusClaimed
+                          ? `¡+${activeEvent.exactYearBonus} ⚡ Entregadas por Año Exacto!`
+                          : `¿Dijo el año exacto (${currentTrack.year})? (+${activeEvent.exactYearBonus} ⚡)`}
+                      </button>
+                    )}
+                  </div>
 
                   {/* Selector interactivo de Ganador del Duelo Relámpago (Todos Juegan) */}
                   {activeEvent?.allPlayDuel && (
@@ -1658,6 +1793,13 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {/* Aviso si la carta fue reubicada por tolerancia/margen de error */}
+            {toleranceNotice && isRevealed && (
+              <div className="w-full max-w-xl mx-auto my-1 p-2.5 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs font-semibold flex items-center justify-center gap-2 shadow-md animate-fadeIn text-center">
+                <span>{toleranceNotice}</span>
+              </div>
+            )}
 
             {/* Zona Inferior: Línea de Tiempo */}
             <div className="w-full">
@@ -1825,6 +1967,18 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de Corrección Manual de Datos de Deezer */}
+      {showCorrectionModal && currentTrack && (
+        <TrackCorrectionModal
+          isOpen={showCorrectionModal}
+          track={currentTrack}
+          playerName={currentPlayer.name}
+          isAlreadyWon={isCorrect}
+          onClose={() => setShowCorrectionModal(false)}
+          onSaveCorrection={handleSaveTrackCorrection}
+        />
       )}
 
       {/* Pie de página sutil */}
