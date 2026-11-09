@@ -265,26 +265,43 @@ export async function enrichTrack(track) {
             } catch {}
           }
 
-          // Consultar iTunes en paralelo para contrastar contra reediciones o compilaciones póstumas
+          // Consultar iTunes en paralelo para contrastar contra reediciones o regrabaciones modernas
           let itunesYear = null;
           try {
+            const cleanArtist = mainArtist
+              .replace(/\bde [A-Z][a-z]+ [A-Z][a-z]+\b/i, '')
+              .replace(/\bde [A-Z][a-z]+\b/i, '')
+              .trim();
+            const itQuery = `${cleanArtist || mainArtist} ${track.title}`.trim();
+
             const itRes = await fetch(
-              `https://itunes.apple.com/search?term=${encodeURIComponent(cleanQuery)}&entity=song&limit=5`
+              `https://itunes.apple.com/search?term=${encodeURIComponent(itQuery)}&entity=song&limit=15`
             );
             if (itRes.ok) {
               const itData = await itRes.json();
-              const itBest = pickBestResult(
-                itData.results || [],
-                mainArtist,
-                track.title,
-                (it) => it.artistName,
-                (it) => it.trackName
-              );
-              if (itBest?.releaseDate) {
-                const parsed = new Date(itBest.releaseDate).getFullYear();
-                if (!isNaN(parsed) && parsed > 1920) {
-                  itunesYear = parsed;
+              const matchingYears = [];
+              const norm = (s) =>
+                String(s || '')
+                  .toLowerCase()
+                  .normalize('NFD')
+                  .replace(/[\u0300-\u036f]/g, '')
+                  .replace(/[^a-z0-9]/g, '');
+
+              const cleanTargetTitle = norm(track.title);
+
+              for (const it of itData.results || []) {
+                const itTitle = norm(it.trackName || '');
+                if (itTitle.includes(cleanTargetTitle) || cleanTargetTitle.includes(itTitle)) {
+                  const y = parseInt(it.releaseDate?.slice(0, 4), 10);
+                  if (!isNaN(y) && y > 1920 && y <= new Date().getFullYear()) {
+                    matchingYears.push(y);
+                  }
                 }
+              }
+
+              if (matchingYears.length > 0) {
+                // El año más antiguo entre las versiones de estudio encontradas es el original
+                itunesYear = Math.min(...matchingYears);
               }
             }
           } catch {}
@@ -294,7 +311,7 @@ export async function enrichTrack(track) {
           if (deezerYear && itunesYear) {
             releaseYear = Math.min(deezerYear, itunesYear);
           } else {
-            releaseYear = deezerYear || itunesYear || 2020;
+            releaseYear = itunesYear || deezerYear || 2020;
           }
         }
 

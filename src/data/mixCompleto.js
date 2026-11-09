@@ -3424,7 +3424,8 @@ export const MIX_COMPLETO_TRACKS = [
     "id": "mix-571",
     "title": "Ya No Me Mires Así",
     "artist": "Cuisillos De Arturo Macias",
-    "searchTerm": "Cuisillos De Arturo Macias Ya No Me Mires Así"
+    "searchTerm": "Cuisillos De Arturo Macias Ya No Me Mires Así",
+    "year": 1998
   },
   {
     "id": "mix-572",
