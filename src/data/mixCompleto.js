@@ -1145,31 +1145,36 @@ export const MIX_COMPLETO_TRACKS = [
     "id": "mix-191",
     "title": "When We're High",
     "artist": "LP",
-    "searchTerm": "LP When We're High"
+    "searchTerm": "LP When We're High",
+    "year": 2017
   },
   {
     "id": "mix-192",
     "title": "Lost on You",
     "artist": "LP",
-    "searchTerm": "LP Lost on You"
+    "searchTerm": "LP Lost on You",
+    "year": 2016
   },
   {
     "id": "mix-193",
     "title": "Shaken",
     "artist": "LP",
-    "searchTerm": "LP Shaken"
+    "searchTerm": "LP Shaken",
+    "year": 2018
   },
   {
     "id": "mix-194",
     "title": "Other People",
     "artist": "LP",
-    "searchTerm": "LP Other People"
+    "searchTerm": "LP Other People",
+    "year": 2016
   },
   {
     "id": "mix-195",
     "title": "Tightrope",
     "artist": "LP",
-    "searchTerm": "LP Tightrope"
+    "searchTerm": "LP Tightrope",
+    "year": 2016
   },
   {
     "id": "mix-196",

@@ -11,6 +11,41 @@ const sessionAudioCache = new Map();
 const METADATA_CACHE_KEY = 'beatline_meta_cache_v2';
 export const USER_CORRECTIONS_KEY = 'beatline_user_corrections_v1';
 
+// Años canónicos verificados para canciones con metadatos notoriamente erróneos en distribuidoras digitales
+export const CANONICAL_TRACK_YEARS = {
+  'lp - lost on you': 2016,
+  'lp - other people': 2016,
+  'lp - tightrope': 2016,
+  'lp - when were high': 2017,
+  'lp - shaken': 2018,
+  'cuisillos de arturo macias - ya no me mires asi': 1998,
+  'cuisillos - ya no me mires asi': 1998,
+  'lefty sm - por mi mexico remix': 2023,
+  'lefty sm - por mi mexico': 2020
+};
+
+export function getCanonicalYear(artist, title) {
+  const norm = (s) =>
+    String(s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9 ]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const art = norm(artist);
+  const tit = norm(title);
+  const key = `${art} - ${tit}`;
+  if (CANONICAL_TRACK_YEARS[key]) return CANONICAL_TRACK_YEARS[key];
+
+  const mainArtist = art.split(' y ')[0].split(' con ')[0].split(' de ')[0].split(' feat ')[0].trim();
+  const mainKey = `${mainArtist} - ${tit}`;
+  if (CANONICAL_TRACK_YEARS[mainKey]) return CANONICAL_TRACK_YEARS[mainKey];
+
+  return null;
+}
+
 export function getUserCorrections() {
   try {
     const raw = localStorage.getItem(USER_CORRECTIONS_KEY);
@@ -229,6 +264,14 @@ export async function enrichTrack(track) {
   }
 
   const metaCache = getMetadataCache()[cacheKey];
+  const canonicalYear = getCanonicalYear(track.artist, track.title);
+  if (canonicalYear && metaCache && metaCache.year !== canonicalYear) {
+    saveMetadataCache(cacheKey, {
+      artwork: metaCache.artwork,
+      year: canonicalYear
+    });
+  }
+
   const mainArtist = (track.artist || '').split('&')[0].split(',')[0].trim();
   const cleanQuery = `${mainArtist} ${track.title}`;
 
@@ -247,7 +290,7 @@ export async function enrichTrack(track) {
       );
 
       if (best && best.preview) {
-        let releaseYear = userOverride?.year || track.year || metaCache?.year;
+        let releaseYear = userOverride?.year || canonicalYear || track.year || metaCache?.year;
 
         // Si es una canción de una playlist personalizada sin año fijo, consultamos el detalle del track en Deezer y contrastamos con iTunes
         if (!releaseYear) {
@@ -330,10 +373,16 @@ export async function enrichTrack(track) {
             }
           } catch {}
 
-          // Si Deezer y iTunes arrojan años válidos, las reediciones/remasterizaciones/recopilatorios
-          // siempre tienen una fecha posterior a la grabación original. El año más antiguo es el original.
+          // Si Deezer y iTunes arrojan años válidos:
           if (deezerYear && itunesYear) {
-            releaseYear = Math.min(deezerYear, itunesYear);
+            // Si la fecha de Deezer es del año 2000 en adelante (canción contemporánea) y iTunes arroja
+            // una fecha con más de 3 años de antigüedad hacia el pasado (ej. errores de distribuidor en Apple Music
+            // como LP 2009 vs 2016, o falso positivo con un tema homónimo viejo), confiamos en la fecha oficial de Deezer:
+            if (deezerYear >= 2000 && deezerYear - itunesYear >= 4) {
+              releaseYear = deezerYear;
+            } else {
+              releaseYear = Math.min(deezerYear, itunesYear);
+            }
           } else {
             releaseYear = itunesYear || deezerYear || 2020;
           }
@@ -385,6 +434,7 @@ export async function enrichTrack(track) {
           const artwork = (best.artworkUrl100 || '').replace('100x100bb', '600x600bb');
           const releaseYear =
             userOverride?.year ||
+            canonicalYear ||
             track.year ||
             (best.releaseDate ? new Date(best.releaseDate).getFullYear() : 2020);
 
@@ -412,7 +462,7 @@ export async function enrichTrack(track) {
       track.artwork ||
       'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80',
     previewUrl: null,
-    year: userOverride?.year || track.year || metaCache?.year || 2020,
+    year: userOverride?.year || canonicalYear || track.year || metaCache?.year || 2020,
     artist: userOverride?.artist || track.artist,
     title: userOverride?.title || track.title
   };
