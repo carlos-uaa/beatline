@@ -62,12 +62,20 @@ async function fetchAllPlaylistTracks(playlistId, accessToken) {
   }
 
   while (offset < total && allTracks.length < maxTracks) {
-    const pageUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?offset=${offset}&limit=${limit}&fields=items(track(id,name,artists(name),preview_url,album(images,release_date))),total,next`;
-    const res = await fetch(pageUrl, {
+    let pageUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?offset=${offset}&limit=${limit}&fields=items(track(id,name,artists(name),preview_url,album(images,release_date))),total,next`;
+    let res = await fetch(pageUrl, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
 
     if (!res.ok) {
+      pageUrl = `https://api.spotify.com/v1/playlists/${playlistId}/items?offset=${offset}&limit=${limit}&fields=items(track(id,name,artists(name),preview_url,album(images,release_date))),total,next`;
+      res = await fetch(pageUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+    }
+
+    if (!res.ok) {
+      console.warn(`Spotify tracks request failed at offset ${offset}: HTTP ${res.status}`);
       break;
     }
 

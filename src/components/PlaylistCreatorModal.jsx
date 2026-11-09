@@ -114,7 +114,8 @@ export default function PlaylistCreatorModal({ isOpen, onClose, onPlaylistCreate
     setIsImporting(true);
     setErrorMsg('');
     try {
-      const imported = await importSpotifyPlaylist(spotifyUrl);
+      const userToken = localStorage.getItem('beatline_spotify_user_token');
+      const imported = await importSpotifyPlaylist(spotifyUrl, userToken);
       saveCustomPlaylist(imported);
       stopPreview();
       onPlaylistCreated(imported);
