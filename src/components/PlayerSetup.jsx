@@ -129,18 +129,14 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
         msg = `Tu playlist ya está sincronizada con Spotify (${res.totalCount} canciones). No se detectaron cambios.`;
       } else {
         const details = [];
-        if (res.addedCount > 0) details.push(`+${res.addedCount} agregadas`);
-        if (res.removedCount > 0) details.push(`-${res.removedCount} eliminadas`);
-        msg = `¡Actualización completada! (${details.join(', ')}). Total: ${res.totalCount} canciones.`;
-      }
-
-      if (res.totalCount === 100 && !spotifyUserToken) {
-        msg += ' 💡 Tip: Para traer las más de 100 canciones (hasta 1,000), haz clic en "Conectar Spotify".';
+        if (res.addedCount > 0) details.push(`+${res.addedCount} canciones nuevas agregadas`);
+        if (res.removedCount > 0) details.push(`-${res.removedCount} canciones eliminadas`);
+        msg = `¡Actualización completada! (${details.join(', ')}). Ahora cuenta con ${res.totalCount} canciones en total.`;
       }
 
       setSyncNotification({
         type: 'success',
-        title: `"${pl.title}" al día`,
+        title: `"${pl.title}" sincronizada`,
         message: msg
       });
     } catch (err) {
@@ -510,23 +506,7 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
             </p>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            {!spotifyUserToken ? (
-              <button
-                type="button"
-                onClick={handleConnectSpotify}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold text-emerald-300 bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/40 shadow-sm transition-all active:scale-95 cursor-pointer"
-                title="Conectar tu cuenta de Spotify para desbloquear listas completas de hasta 1,000 canciones"
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Conectar Spotify (+100)</span>
-              </button>
-            ) : (
-              <span className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-emerald-300 bg-emerald-950/40 border border-emerald-500/30 flex items-center gap-1">
-                ✓ Spotify Vinculado
-              </span>
-            )}
-
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setShowCreator(true)}
@@ -543,21 +523,21 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
           <div
             className={`p-3 rounded-2xl border flex items-start justify-between gap-2.5 animate-fadeIn ${
               syncNotification.type === 'success'
-                ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
-                : 'bg-rose-950/60 border-rose-500/50 text-rose-200'
+                ? 'bg-emerald-50 text-emerald-950 border-emerald-300 dark:bg-emerald-950/70 dark:text-emerald-200 dark:border-emerald-500/50 shadow-sm'
+                : 'bg-rose-50 text-rose-950 border-rose-300 dark:bg-rose-950/70 dark:text-rose-200 dark:border-rose-500/50 shadow-sm'
             }`}
           >
             <div className="flex items-start gap-2 min-w-0">
               {syncNotification.type === 'success' ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
               ) : (
-                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
               )}
               <div>
-                <span className="font-bold text-xs text-white block">
+                <span className="font-bold text-xs text-slate-900 dark:text-white block">
                   {syncNotification.title}
                 </span>
-                <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">
+                <p className="text-[11px] text-slate-700 dark:text-slate-300 mt-0.5 leading-snug">
                   {syncNotification.message}
                 </p>
               </div>
@@ -565,7 +545,7 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
             <button
               type="button"
               onClick={() => setSyncNotification(null)}
-              className="p-1 rounded-lg text-slate-400 hover:text-white shrink-0 cursor-pointer"
+              className="p-1 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white shrink-0 cursor-pointer"
               title="Cerrar aviso"
             >
               <X className="w-3.5 h-3.5" />
@@ -596,7 +576,7 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
                   />
                   {pl.spotifyPlaylistId && (
                     <div
-                      className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-tl-md bg-emerald-500 flex items-center justify-center text-[8px] font-black text-slate-950"
+                      className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-tl-md bg-emerald-600 dark:bg-emerald-500 flex items-center justify-center text-[8px] font-black text-white dark:text-slate-950"
                       title="Sincronizada con Spotify"
                     >
                       ✓
@@ -610,7 +590,7 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
                       {pl.title}
                     </h4>
                     {pl.isOfficial && (
-                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-md shrink-0">
+                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30 rounded-md shrink-0">
                         Spotify
                       </span>
                     )}
@@ -633,12 +613,12 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
                     disabled={isSyncing}
                     className={`p-1.5 rounded-xl border transition-all flex items-center gap-1 shrink-0 cursor-pointer ${
                       isSyncing
-                        ? 'bg-amber-500/20 border-amber-500 text-amber-300 animate-pulse'
-                        : 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400 hover:text-white hover:bg-emerald-600/30'
+                        ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-500/50 animate-pulse'
+                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 dark:border-emerald-500/40 shadow-xs'
                     }`}
                     title="Verificar si se agregaron o eliminaron canciones en Spotify"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-amber-400' : ''}`} />
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`} />
                     <span className="text-[10px] font-bold hidden sm:inline">
                       {isSyncing ? 'Sincronizando...' : 'Actualizar'}
                     </span>

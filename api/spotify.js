@@ -1,125 +1,11 @@
-// api/spotify.js - Endpoint seguro en servidor (Vercel Serverless Function)
-// Protege las llaves privadas del usuario: nunca se exponen al cliente ni al repositorio.
+// api/spotify.js - Endpoint optimizado de extracción completa de Spotify (GraphQL Pathfinder + Embed Fallback)
+// Soporta playlists de 100 hasta más de 1,000 canciones sin requerir login interactivo ni redirecciones OAuth.
 
-let cachedAppToken = null;
-let tokenExpiresAt = 0;
+const PATHFINDER_URL = 'https://api-partner.spotify.com/pathfinder/v1/query';
+const PLAYLIST_SHA256 = 'a65e12194ed5fc443a1cdebed5fabe33ca5b07b987185d63c72483867ad13cb4';
+const OPERATION_NAME = 'fetchPlaylist';
 
-async function getAppAccessToken() {
-  const clientId = process.env.SPOTIFY_CLIENT_ID;
-  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) return null;
-
-  if (cachedAppToken && Date.now() < tokenExpiresAt - 60000) {
-    return cachedAppToken;
-  }
-
-  try {
-    const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const res = await fetch('https://accounts.spotify.com/api/token', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${authHeader}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: 'grant_type=client_credentials'
-    });
-
-    if (!res.ok) return null;
-    const data = await res.json();
-    cachedAppToken = data.access_token;
-    tokenExpiresAt = Date.now() + (data.expires_in || 3600) * 1000;
-    return cachedAppToken;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchAllPlaylistTracks(playlistId, accessToken) {
-  const limit = 100;
-  let offset = 0;
-  let total = Infinity;
-  const allTracks = [];
-  const maxTracks = 1000; // Límite seguro para evitar timeouts
-
-  // Primero obtenemos los metadatos de la playlist
-  let playlistMeta = { title: 'Playlist de Spotify', cover: null, total: 0 };
-  try {
-    const metaRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}?fields=name,images,tracks.total`, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    if (metaRes.ok) {
-      const meta = await metaRes.json();
-      playlistMeta.title = meta.name || 'Playlist de Spotify';
-      playlistMeta.cover = meta.images?.[0]?.url || null;
-      if (typeof meta.tracks?.total === 'number') {
-        total = meta.tracks.total;
-        playlistMeta.total = total;
-      }
-    }
-  } catch (e) {
-    console.warn('No se pudieron obtener metadatos de la playlist:', e);
-  }
-
-  while (offset < total && allTracks.length < maxTracks) {
-    let pageUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?offset=${offset}&limit=${limit}&fields=items(track(id,name,artists(name),preview_url,album(images,release_date))),total,next`;
-    let res = await fetch(pageUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-
-    if (!res.ok) {
-      pageUrl = `https://api.spotify.com/v1/playlists/${playlistId}/items?offset=${offset}&limit=${limit}&fields=items(track(id,name,artists(name),preview_url,album(images,release_date))),total,next`;
-      res = await fetch(pageUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-    }
-
-    if (!res.ok) {
-      console.warn(`Spotify tracks request failed at offset ${offset}: HTTP ${res.status}`);
-      break;
-    }
-
-    const data = await res.json();
-    if (typeof data.total === 'number') {
-      total = data.total;
-    }
-
-    const items = data.items || [];
-    if (items.length === 0) break;
-
-    for (const item of items) {
-      const t = item.track;
-      if (!t || !t.name) continue;
-
-      let year = null;
-      if (t.album?.release_date) {
-        const parsedYear = parseInt(t.album.release_date.slice(0, 4), 10);
-        if (!isNaN(parsedYear) && parsedYear > 1900 && parsedYear <= 2030) {
-          year = parsedYear;
-        }
-      }
-
-      allTracks.push({
-        id: t.id ? `sp-${t.id}` : `sp-${Math.random()}`,
-        title: t.name,
-        artist: t.artists?.map((a) => a.name).join(', ') || 'Desconocido',
-        audioPreviewUrl: t.preview_url || null,
-        year
-      });
-    }
-
-    if (!data.next) break;
-    offset += limit;
-  }
-
-  return {
-    title: playlistMeta.title,
-    cover: playlistMeta.cover,
-    tracks: allTracks
-  };
-}
-
-async function scrapeEmbedPlaylist(playlistId) {
+async function getEmbedSessionAndFallback(playlistId) {
   const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
   const response = await fetch(embedUrl, {
     headers: {
@@ -135,31 +21,114 @@ async function scrapeEmbedPlaylist(playlistId) {
   }
 
   const html = await response.text();
-  const scriptMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.+?)<\/script>/);
-
-  if (!scriptMatch) {
-    throw new Error('No se pudieron extraer canciones. Verifica que la playlist sea pública.');
+  const idx = html.indexOf('__NEXT_DATA__');
+  if (idx === -1) {
+    throw new Error('No se encontraron metadatos públicos de la playlist de Spotify.');
   }
 
-  const nextData = JSON.parse(scriptMatch[1]);
+  const start = html.indexOf('>', idx) + 1;
+  const end = html.indexOf('</script>', start);
+  const nextData = JSON.parse(html.slice(start, end));
+
+  const session = nextData?.props?.pageProps?.state?.settings?.session;
   const entity = nextData?.props?.pageProps?.state?.data?.entity;
   const trackList = entity?.trackList || [];
 
-  if (trackList.length === 0) {
-    throw new Error('La playlist está vacía o no tiene canciones públicas.');
-  }
+  const fallbackTracks = trackList.map((t) => ({
+    id: t.uri || `sp-${Math.random()}`,
+    title: t.title,
+    artist: t.subtitle,
+    searchTerm: `${t.subtitle} ${t.title}`,
+    audioPreviewUrl: t.audioPreview?.url || null,
+    year: null
+  }));
 
   return {
+    token: session?.accessToken || null,
     title: entity?.title || 'Playlist de Spotify',
     subtitle: entity?.subtitle || 'Spotify',
     cover: entity?.coverArt?.sources?.[0]?.url || null,
-    tracks: trackList.map((t) => ({
-      id: t.uri || `sp-${Math.random()}`,
-      title: t.title,
-      artist: t.subtitle,
-      audioPreviewUrl: t.audioPreview?.url || null,
-      year: null
-    }))
+    fallbackTracks
+  };
+}
+
+async function fetchPathfinderTracks(playlistId, token) {
+  const limit = 100;
+  let offset = 0;
+  let totalCount = 100;
+  const allTracks = [];
+  const maxTracks = 1500; // Margen para playlists de hasta 1500 canciones
+
+  while (offset < totalCount && allTracks.length < maxTracks) {
+    const variables = {
+      uri: `spotify:playlist:${playlistId}`,
+      offset,
+      limit,
+      enableWatchFeedEntrypoint: false
+    };
+    const extensions = {
+      persistedQuery: {
+        version: 1,
+        sha256Hash: PLAYLIST_SHA256
+      }
+    };
+
+    const url = `${PATHFINDER_URL}?operationName=${OPERATION_NAME}&variables=${encodeURIComponent(
+      JSON.stringify(variables)
+    )}&extensions=${encodeURIComponent(JSON.stringify(extensions))}`;
+
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'app-platform': 'WebPlayer'
+      }
+    });
+
+    if (!res.ok) {
+      console.warn(`Pathfinder query failed at offset ${offset}: HTTP ${res.status}`);
+      break;
+    }
+
+    const json = await res.json();
+    const plData = json?.data?.playlistV2;
+    if (typeof plData?.content?.totalCount === 'number') {
+      totalCount = plData.content.totalCount;
+    }
+
+    const items = plData?.content?.items || [];
+    if (items.length === 0) break;
+
+    for (const it of items) {
+      const t = it?.itemV2?.data;
+      if (!t || !t.name) continue;
+
+      const artists =
+        t.artists?.items?.map((a) => a.profile?.name).filter(Boolean).join(', ') || 'Desconocido';
+
+      let year = null;
+      if (t.albumOfTrack?.date?.isoString) {
+        const parsedYear = parseInt(t.albumOfTrack.date.isoString.slice(0, 4), 10);
+        if (!isNaN(parsedYear) && parsedYear > 1900 && parsedYear <= 2030) {
+          year = parsedYear;
+        }
+      }
+
+      allTracks.push({
+        id: t.uri ? `sp-${t.uri.split(':').pop()}` : `sp-${Math.random()}`,
+        title: t.name,
+        artist: artists,
+        searchTerm: `${artists} ${t.name}`,
+        audioPreviewUrl: null,
+        year
+      });
+    }
+
+    offset += limit;
+  }
+
+  return {
+    totalCount,
+    tracks: allTracks
   };
 }
 
@@ -172,7 +141,7 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  const { url, id, token: queryToken } = req.query;
+  const { url, id } = req.query;
   const input = url || id || '';
   const match = String(input).match(/playlist[/:]([a-zA-Z0-9]+)/);
   const playlistId = match ? match[1] : input.trim();
@@ -181,40 +150,39 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'No se detectó un ID o enlace válido de playlist de Spotify.' });
   }
 
-  // Token de usuario opcional enviado desde el frontend (si el usuario hizo login con Spotify)
-  const authHeader = req.headers.authorization || '';
-  const userToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : (queryToken || null);
-
-  // 1. Si hay token de usuario (o token del app disponible), intentar paginación completa oficial
-  const effectiveToken = userToken || (await getAppAccessToken());
-
-  if (effectiveToken) {
-    try {
-      const result = await fetchAllPlaylistTracks(playlistId, effectiveToken);
-      if (result.tracks && result.tracks.length > 0) {
-        return res.status(200).json({
-          id: playlistId,
-          title: result.title,
-          cover: result.cover,
-          totalFetched: result.tracks.length,
-          tracks: result.tracks
-        });
-      }
-    } catch (apiErr) {
-      console.warn('API oficial falló o requiere autorización adicional, probando scraper:', apiErr.message);
-    }
-  }
-
-  // 2. Método de respaldo automático: Scraper de embed público (hasta 100 canciones, sin login ni claves)
   try {
-    const embedData = await scrapeEmbedPlaylist(playlistId);
+    // 1. Obtener la sesión y metadatos base
+    const baseInfo = await getEmbedSessionAndFallback(playlistId);
+
+    // 2. Si hay token de sesión del Web Player, ejecutar paginación GraphQL de hasta 1500 canciones
+    if (baseInfo.token) {
+      try {
+        const pathfinderResult = await fetchPathfinderTracks(playlistId, baseInfo.token);
+        if (pathfinderResult.tracks && pathfinderResult.tracks.length > 0) {
+          return res.status(200).json({
+            id: playlistId,
+            title: baseInfo.title,
+            subtitle: baseInfo.subtitle,
+            cover: baseInfo.cover,
+            totalCount: pathfinderResult.totalCount,
+            totalFetched: pathfinderResult.tracks.length,
+            tracks: pathfinderResult.tracks
+          });
+        }
+      } catch (gqlErr) {
+        console.warn('Pathfinder GraphQL pagination falló, recurriendo a fallback embed:', gqlErr.message);
+      }
+    }
+
+    // 3. Fallback de respaldo: Primeras 100 canciones del embed
     return res.status(200).json({
       id: playlistId,
-      title: embedData.title,
-      subtitle: embedData.subtitle,
-      cover: embedData.cover,
-      totalFetched: embedData.tracks.length,
-      tracks: embedData.tracks
+      title: baseInfo.title,
+      subtitle: baseInfo.subtitle,
+      cover: baseInfo.cover,
+      totalCount: baseInfo.fallbackTracks.length,
+      totalFetched: baseInfo.fallbackTracks.length,
+      tracks: baseInfo.fallbackTracks
     });
   } catch (err) {
     return res.status(500).json({
