@@ -11,9 +11,13 @@ import {
   Dices, 
   ShieldCheck,
   Play,
-  Mic
+  Mic,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  X
 } from 'lucide-react';
-import { getAllPlaylists, deleteCustomPlaylist } from '../services/playlistStorage';
+import { getAllPlaylists, deleteCustomPlaylist, syncSpotifyPlaylist } from '../services/playlistStorage';
 import PlaylistCreatorModal from './PlaylistCreatorModal';
 
 export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, onDiscardGame }) {
@@ -30,6 +34,8 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
   const [playlists, setPlaylists] = useState([]);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState('mix-completo');
   const [showCreator, setShowCreator] = useState(false);
+  const [syncingId, setSyncingId] = useState(null);
+  const [syncNotification, setSyncNotification] = useState(null);
 
   useEffect(() => {
     const loaded = getAllPlaylists();
@@ -68,7 +74,42 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
     const updated = getAllPlaylists();
     setPlaylists(updated);
     if (selectedPlaylistId === id) {
-      setSelectedPlaylistId(updated[0]?.id || 'urbano-argentina');
+      setSelectedPlaylistId(updated[0]?.id || 'mix-completo');
+    }
+  };
+
+  const handleSyncSpotify = async (e, pl) => {
+    e.stopPropagation();
+    setSyncingId(pl.id);
+    setSyncNotification(null);
+    try {
+      const res = await syncSpotifyPlaylist(pl);
+      const updatedList = getAllPlaylists();
+      setPlaylists(updatedList);
+
+      let msg = '';
+      if (res.addedCount === 0 && res.removedCount === 0) {
+        msg = `Tu playlist ya está completamente sincronizada con Spotify (${res.totalCount} canciones). No se detectaron cambios.`;
+      } else {
+        const details = [];
+        if (res.addedCount > 0) details.push(`+${res.addedCount} agregadas`);
+        if (res.removedCount > 0) details.push(`-${res.removedCount} eliminadas`);
+        msg = `¡Actualización completada! (${details.join(', ')}). Ahora cuenta con ${res.totalCount} canciones en total.`;
+      }
+
+      setSyncNotification({
+        type: 'success',
+        title: `"${pl.title}" al día`,
+        message: msg
+      });
+    } catch (err) {
+      setSyncNotification({
+        type: 'error',
+        title: `No se pudo actualizar "${pl.title}"`,
+        message: err.message || 'Error al conectar con Spotify. Verifica tu conexión.'
+      });
+    } finally {
+      setSyncingId(null);
     }
   };
 
@@ -438,39 +479,118 @@ export default function PlayerSetup({ onStartGame, hasSavedGame, onResumeGame, o
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1">
+        {/* Notificación de sincronización con Spotify */}
+        {syncNotification && (
+          <div
+            className={`p-3 rounded-2xl border flex items-start justify-between gap-2.5 animate-fadeIn ${
+              syncNotification.type === 'success'
+                ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
+                : 'bg-rose-950/60 border-rose-500/50 text-rose-200'
+            }`}
+          >
+            <div className="flex items-start gap-2 min-w-0">
+              {syncNotification.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              )}
+              <div>
+                <span className="font-bold text-xs text-white block">
+                  {syncNotification.title}
+                </span>
+                <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">
+                  {syncNotification.message}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSyncNotification(null)}
+              className="p-1 rounded-lg text-slate-400 hover:text-white shrink-0 cursor-pointer"
+              title="Cerrar aviso"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
           {playlists.map((pl) => {
             const isSelected = selectedPlaylistId === pl.id;
+            const isSyncing = syncingId === pl.id;
+
             return (
               <div
                 key={pl.id}
                 onClick={() => setSelectedPlaylistId(pl.id)}
                 className={`p-2.5 rounded-2xl border flex items-center gap-2.5 cursor-pointer transition-all ${
                   isSelected
-                    ? 'bg-violet-950/40 border-violet-500 ring-2 ring-violet-500/20'
+                    ? 'bg-violet-950/40 border-violet-500 ring-2 ring-violet-500/20 shadow-md'
                     : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
                 }`}
               >
-                <div className="w-11 h-11 rounded-xl overflow-hidden bg-slate-800 shrink-0 border border-slate-700">
+                <div className="w-11 h-11 rounded-xl overflow-hidden bg-slate-800 shrink-0 border border-slate-700 relative">
                   <img
                     src={pl.cover}
                     alt={pl.title}
                     className="w-full h-full object-cover"
                   />
+                  {pl.spotifyPlaylistId && (
+                    <div
+                      className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-tl-md bg-emerald-500 flex items-center justify-center text-[8px] font-black text-slate-950"
+                      title="Sincronizada con Spotify"
+                    >
+                      ✓
+                    </div>
+                  )}
                 </div>
+
                 <div className="flex-1 min-w-0">
-                  <h4 className="font-bold text-xs text-white truncate">
-                    {pl.title}
-                  </h4>
-                  <p className="text-[10px] text-slate-400 truncate">
+                  <div className="flex items-center gap-1.5">
+                    <h4 className="font-bold text-xs text-white truncate">
+                      {pl.title}
+                    </h4>
+                    {pl.isOfficial && (
+                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-md shrink-0">
+                        Spotify
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 truncate mt-0.5">
                     {pl.tracks?.length || 0} canciones
+                    {pl.lastSyncedAt && (
+                      <span className="text-slate-500 ml-1.5">
+                        • Actualizada
+                      </span>
+                    )}
                   </p>
                 </div>
+
+                {/* Botón de refrescar / sincronizar cambios de Spotify */}
+                {pl.spotifyPlaylistId && (
+                  <button
+                    type="button"
+                    onClick={(e) => handleSyncSpotify(e, pl)}
+                    disabled={isSyncing}
+                    className={`p-1.5 rounded-xl border transition-all flex items-center gap-1 shrink-0 cursor-pointer ${
+                      isSyncing
+                        ? 'bg-amber-500/20 border-amber-500 text-amber-300 animate-pulse'
+                        : 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400 hover:text-white hover:bg-emerald-600/30'
+                    }`}
+                    title="Verificar si se agregaron o eliminaron canciones en Spotify"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-amber-400' : ''}`} />
+                    <span className="text-[10px] font-bold hidden sm:inline">
+                      {isSyncing ? 'Sincronizando...' : 'Actualizar'}
+                    </span>
+                  </button>
+                )}
+
                 {pl.isCustom && (
                   <button
                     type="button"
                     onClick={(e) => handleDeletePlaylist(e, pl.id)}
-                    className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/40"
+                    className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 shrink-0 cursor-pointer"
                     title="Eliminar esta playlist"
                   >
                     <Trash2 className="w-3.5 h-3.5" />

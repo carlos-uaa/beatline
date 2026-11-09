@@ -464,6 +464,8 @@ export async function importSpotifyPlaylist(urlOrId, userToken = null) {
       data.cover ||
       'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80',
     tracks,
+    spotifyPlaylistId: playlistId,
+    spotifyUrl: `https://open.spotify.com/playlist/${playlistId}`,
     isCustom: true
   };
 }
