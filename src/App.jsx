@@ -102,6 +102,7 @@ export default function App() {
   // Estados de fichas y bonus en el turno actual
   const [bonusClaimedThisTurn, setBonusClaimedThisTurn] = useState(false);
   const [cardRevokedThisTurn, setCardRevokedThisTurn] = useState(false);
+  const [extraCardAwardedThisTurn, setExtraCardAwardedThisTurn] = useState(null);
   const [showStealModal, setShowStealModal] = useState(false);
   const [showEventModal, setShowEventModal] = useState(false);
   const [hasStartedPlayback, setHasStartedPlayback] = useState(false);
@@ -375,6 +376,7 @@ export default function App() {
     setViewingPlayerIndex(null);
     setBonusClaimedThisTurn(false);
     setCardRevokedThisTurn(false);
+    setExtraCardAwardedThisTurn(null);
     setHint1Active(false);
     setEliminatedSlots([]);
     setHasStartedPlayback(false);
@@ -751,6 +753,7 @@ export default function App() {
               extraIdx++;
             }
             updatedCards.splice(extraIdx, 0, finalizedExtra);
+            setExtraCardAwardedThisTurn(finalizedExtra);
           } catch (e) {
             console.error('Error enriqueciendo carta extra de Doble o Nada:', e);
           }
@@ -951,7 +954,17 @@ export default function App() {
   const handleRevokeCardForNotKnowingSong = () => {
     if (!isCorrect || cardRevokedThisTurn) return;
     playErrorSound();
-    const updatedCards = (currentPlayer.cards || []).filter((c) => c.id !== currentTrack.id);
+
+    const idsToRemove = new Set([currentTrack.id]);
+    if (extraCardAwardedThisTurn?.id) {
+      idsToRemove.add(extraCardAwardedThisTurn.id);
+      // Devolver la carta extra de Doble o Nada al mazo
+      if (Array.isArray(deck)) {
+        deck.push(extraCardAwardedThisTurn);
+      }
+    }
+
+    const updatedCards = (currentPlayer.cards || []).filter((c) => !idsToRemove.has(c.id));
     const updatedPlayers = [...players];
     updatedPlayers[effectivePlayerIndex] = {
       ...currentPlayer,
@@ -962,6 +975,7 @@ export default function App() {
     setCardRevokedThisTurn(true);
     setIsCorrect(false);
     setToleranceNotice(null);
+    setExtraCardAwardedThisTurn(null);
   };
 
   // Guardar corrección manual de datos de la canción (Año / Artista / Título)
@@ -1681,10 +1695,16 @@ export default function App() {
                         type="button"
                         onClick={handleRevokeCardForNotKnowingSong}
                         className="px-3 py-1.5 rounded-xl font-semibold bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/50 text-rose-300 flex items-center gap-1 cursor-pointer"
-                        title="Toca aquí si la regla familiar exige adivinar la canción para quedársela"
+                        title={
+                          extraCardAwardedThisTurn
+                            ? 'Retirar ambas cartas otorgadas (la adivinada y el bonus de Doble o Nada)'
+                            : 'Toca aquí si la regla familiar exige adivinar la canción para quedársela'
+                        }
                       >
                         <Undo2 className="w-3.5 h-3.5" />
-                        No se supo la canción (Quitar carta)
+                        {extraCardAwardedThisTurn
+                          ? 'No se supo la canción (Quitar ambas cartas de Doble o Nada)'
+                          : 'No se supo la canción (Quitar carta)'}
                       </button>
                     )}
 
