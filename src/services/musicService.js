@@ -420,7 +420,7 @@ export async function fetchTrackReleaseYear(deezerId) {
  * Importa una Playlist pública de Spotify a partir de su URL o ID
  * Guarda las canciones inmediatamente y resuelve audio/año bajo demanda durante cada turno.
  */
-export async function importSpotifyPlaylist(urlOrId) {
+export async function importSpotifyPlaylist(urlOrId, userToken = null) {
   const match = String(urlOrId).match(/playlist[/:]([a-zA-Z0-9]+)/);
   const playlistId = match ? match[1] : String(urlOrId).trim();
 
@@ -428,8 +428,13 @@ export async function importSpotifyPlaylist(urlOrId) {
     throw new Error('No se encontró un enlace o ID válido de playlist de Spotify.');
   }
 
-  const endpoint = `/api/spotify?id=${encodeURIComponent(playlistId)}`;
-  const res = await fetch(endpoint);
+  let endpoint = `/api/spotify?id=${encodeURIComponent(playlistId)}`;
+  if (userToken) {
+    endpoint += `&token=${encodeURIComponent(userToken)}`;
+  }
+  const headers = userToken ? { Authorization: `Bearer ${userToken}` } : {};
+
+  const res = await fetch(endpoint, { headers });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     throw new Error(errData.error || `Error al importar de Spotify (HTTP ${res.status})`);
@@ -447,7 +452,8 @@ export async function importSpotifyPlaylist(urlOrId) {
     title: item.title,
     artist: item.artist,
     searchTerm: `${item.artist} ${item.title}`,
-    previewUrl: item.audioPreviewUrl || null
+    previewUrl: item.audioPreviewUrl || null,
+    year: item.year || null
   }));
 
   return {
