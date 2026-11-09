@@ -610,7 +610,8 @@ export const MIX_COMPLETO_TRACKS = [
     "id": "mix-102",
     "title": "Por Mi México (Remix)",
     "artist": "Lefty Sm, Santa Fe Klan, Dharius, C-Kan, MC Davo, Neto Peña",
-    "searchTerm": "Lefty Sm, Santa Fe Klan, Dharius, C-Kan, MC Davo, Neto Peña Por Mi México (Remix)"
+    "searchTerm": "Lefty Sm, Santa Fe Klan, Dharius, C-Kan, MC Davo, Neto Peña Por Mi México (Remix)",
+    "year": 2023
   },
   {
     "id": "mix-103",

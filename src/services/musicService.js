@@ -287,11 +287,35 @@ export async function enrichTrack(track) {
                   .replace(/[\u0300-\u036f]/g, '')
                   .replace(/[^a-z0-9]/g, '');
 
-              const cleanTargetTitle = norm(track.title);
+              const stripDecorations = (str) =>
+                String(str || '')
+                  .replace(/\([^)]*(?:remix|en vivo|live|version|edit|ft|feat)[^)]*\)/gi, '')
+                  .replace(/\[[^\]]*(?:remix|en vivo|live|version|edit|ft|feat)[^\]]*\]/gi, '')
+                  .replace(/- (?:remix|en vivo|live|remasterizada|remastered).*/gi, '')
+                  .trim();
+
+              const cleanArtistNorm = norm(cleanArtist || mainArtist).replace(/\bde[a-z]+/g, '');
+              const targetTitleNorm = norm(track.title);
+              const targetTitleStripped = norm(stripDecorations(track.title));
 
               for (const it of itData.results || []) {
-                const itTitle = norm(it.trackName || '');
-                if (itTitle.includes(cleanTargetTitle) || cleanTargetTitle.includes(itTitle)) {
+                const itArtistNorm = norm(it.artistName || '').replace(/\bde[a-z]+/g, '');
+                // 1. El artista debe coincidir obligatoriamente (evita falsos positivos como otra canción con nombre parecido)
+                const artistMatches =
+                  cleanArtistNorm &&
+                  (itArtistNorm.includes(cleanArtistNorm) || cleanArtistNorm.includes(itArtistNorm));
+
+                if (!artistMatches) continue;
+
+                // 2. El título debe coincidir de forma estricta (completo o sin etiquetas de remix/en vivo)
+                const itTitleNorm = norm(it.trackName || '');
+                const itTitleStripped = norm(stripDecorations(it.trackName || ''));
+
+                const titleMatches =
+                  itTitleNorm === targetTitleNorm ||
+                  (targetTitleStripped && itTitleStripped === targetTitleStripped);
+
+                if (titleMatches) {
                   const y = parseInt(it.releaseDate?.slice(0, 4), 10);
                   if (!isNaN(y) && y > 1920 && y <= new Date().getFullYear()) {
                     matchingYears.push(y);
