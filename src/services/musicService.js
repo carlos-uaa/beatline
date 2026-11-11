@@ -159,71 +159,117 @@ function normalizeStr(str) {
     .trim();
 }
 
+const STOP_WORDS = new Set([
+  'los', 'las', 'el', 'la', 'lo', 'the', 'de', 'del', 'y', 'and', 'grupo', 'banda', 'conjunto', 'orchestra', 'orquesta'
+]);
+
 /**
- * Puntúa resultados para descartar "Type Beats", "Karaoke", "Cumbia Cover", "Tribute", "En Vivo", etc.
+ * Puntúa resultados para garantizar la coincidencia exacta de Artista, Versión (Original vs Remix)
+ * y descarta "Type Beats", "Karaoke", "Cumbia Cover", "Tribute", "En Vivo", etc.
  */
-function pickBestResult(items, expectedArtist, expectedTitle, getArtist, getTitle) {
+function pickBestResult(items, expectedArtist, expectedTitle, getArtist, getTitle, expectedYear = null, getReleaseYear = null) {
   if (!items || items.length === 0) return null;
 
   const normExpectedArtist = normalizeStr(expectedArtist);
-  const primaryArtistWord = normExpectedArtist.split(/\s+/)[0];
+  const artistTokens = normExpectedArtist.split(/\s+/).filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+  const primarySignificantArtist = artistTokens[0] || normExpectedArtist;
+
   const normExpectedTitle = normalizeStr(expectedTitle);
   const titleWords = normExpectedTitle.split(/\s+/).filter((w) => w.length > 2);
 
-  const expectRemix = normExpectedTitle.includes('remix');
+  const expectRemix = /\b(remix|rmx)\b/i.test(normExpectedTitle);
+  const expectLive = /\b(en vivo|live|acustico|acoustic)\b/i.test(normExpectedTitle);
+
   const forbiddenTerms = [
     'type beat',
     'karaoke',
     'tribute',
     'instrumental',
     'cover',
-    'en vivo',
-    'live',
     '8d',
     'sped up',
     'slowed',
     'parody',
-    'cumbia',
     'pablillo',
     'vallorani'
   ];
 
-  let bestItem = items[0];
-  let bestScore = -999;
+  let bestItem = null;
+  let bestScore = -9999;
 
   for (const item of items) {
-    const artist = normalizeStr(getArtist(item));
-    const title = normalizeStr(getTitle(item));
+    const rawArtist = getArtist(item) || '';
+    const rawTitle = getTitle(item) || '';
+    const artist = normalizeStr(rawArtist);
+    const title = normalizeStr(rawTitle);
     let score = 0;
 
-    // Coincidencia de artista principal
-    if (artist.includes(primaryArtistWord)) {
-      score += 60;
-    }
+    // 1. Coincidencia de Artista
     if (artist === normExpectedArtist) {
-      score += 25;
+      score += 100;
+    } else if (artist.includes(normExpectedArtist) || normExpectedArtist.includes(artist)) {
+      score += 70;
+    } else if (artist.includes(primarySignificantArtist)) {
+      score += 50;
+    } else {
+      score -= 200;
     }
 
-    // Coincidencia de título
+    // 2. Coincidencia de Título
     if (title === normExpectedTitle) {
-      score += 50;
+      score += 80;
     } else if (title.includes(normExpectedTitle) || normExpectedTitle.includes(title)) {
-      score += 35;
+      score += 45;
     } else {
+      let matchedWords = 0;
       for (const w of titleWords) {
-        if (title.includes(w)) score += 12;
+        if (title.includes(w)) matchedWords++;
+      }
+      if (titleWords.length > 0 && matchedWords === titleWords.length) {
+        score += 40;
+      } else {
+        score += matchedWords * 10;
       }
     }
 
-    // Penalizar términos no deseados (covers, instrumentales, etc.)
+    // 3. Fidelidad estricta de Versión (Remix vs Original)
+    const itemHasRemix = /\b(remix|rmx)\b/i.test(title);
+    if (expectRemix) {
+      if (itemHasRemix) score += 90;
+      else score -= 250; // Buscamos remix, no original
+    } else {
+      if (itemHasRemix) score -= 250; // Buscamos original, no remix
+    }
+
+    // 4. Fidelidad de En Vivo / Acústico
+    const itemHasLive = /\b(en vivo|live|acustico|acoustic)\b/i.test(title);
+    if (expectLive) {
+      if (itemHasLive) score += 60;
+      else score -= 150;
+    } else {
+      if (itemHasLive) score -= 150;
+    }
+
+    // 5. Penalizar términos no deseados (covers, karaokes, instrumentales)
     for (const bad of forbiddenTerms) {
       if (!normExpectedTitle.includes(bad) && (title.includes(bad) || artist.includes(bad))) {
-        score -= 120;
+        score -= 300;
       }
     }
 
-    if (!expectRemix && title.includes('remix')) {
-      score -= 30;
+    // 6. Coincidencia de Año de Lanzamiento (evita recopilatorios de 2026 para canciones de los 90s)
+    if (expectedYear && getReleaseYear) {
+      const itemYear = getReleaseYear(item);
+      if (itemYear) {
+        const diff = Math.abs(itemYear - expectedYear);
+        if (diff === 0) {
+          score += 60;
+        } else if (diff <= 1) {
+          score += 35;
+        } else if (diff >= 8) {
+          score -= 100;
+        }
+      }
     }
 
     if (score > bestScore) {
@@ -232,7 +278,7 @@ function pickBestResult(items, expectedArtist, expectedTitle, getArtist, getTitl
     }
   }
 
-  return bestItem;
+  return bestItem || items[0];
 }
 
 /**
@@ -274,6 +320,7 @@ export async function enrichTrack(track) {
 
   const mainArtist = (track.artist || '').split('&')[0].split(',')[0].trim();
   const cleanQuery = `${mainArtist} ${track.title}`;
+  const targetYear = userOverride?.year || canonicalYear || track.year;
 
   // 1. Intentar con Deezer API (JSONP) - Tiene el catálogo original completo de Urbano y global
   try {
@@ -286,11 +333,13 @@ export async function enrichTrack(track) {
         mainArtist,
         track.title,
         (it) => it.artist?.name,
-        (it) => it.title
+        (it) => it.title,
+        targetYear,
+        (it) => (it.album?.release_date ? parseInt(it.album.release_date.slice(0, 4), 10) : null)
       );
 
       if (best && best.preview) {
-        let releaseYear = userOverride?.year || canonicalYear || track.year || metaCache?.year;
+        let releaseYear = targetYear || metaCache?.year;
 
         // Si es una canción de una playlist personalizada sin año fijo, consultamos el detalle del track en Deezer y contrastamos con iTunes
         if (!releaseYear) {
@@ -427,15 +476,15 @@ export async function enrichTrack(track) {
           mainArtist,
           track.title,
           (it) => it.artistName,
-          (it) => it.trackName
+          (it) => it.trackName,
+          targetYear,
+          (it) => (it.releaseDate ? parseInt(it.releaseDate.slice(0, 4), 10) : null)
         );
 
         if (best && best.previewUrl) {
           const artwork = (best.artworkUrl100 || '').replace('100x100bb', '600x600bb');
           const releaseYear =
-            userOverride?.year ||
-            canonicalYear ||
-            track.year ||
+            targetYear ||
             (best.releaseDate ? new Date(best.releaseDate).getFullYear() : 2020);
 
           const enriched = {

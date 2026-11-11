@@ -52,83 +52,108 @@ async function getEmbedSessionAndFallback(playlistId) {
   };
 }
 
-async function fetchPathfinderTracks(playlistId, token) {
-  const limit = 100;
-  let offset = 0;
-  let totalCount = 100;
-  const allTracks = [];
-  const maxTracks = 1500; // Margen para playlists de hasta 1500 canciones
-
-  while (offset < totalCount && allTracks.length < maxTracks) {
-    const variables = {
-      uri: `spotify:playlist:${playlistId}`,
-      offset,
-      limit,
-      enableWatchFeedEntrypoint: false
-    };
-    const extensions = {
-      persistedQuery: {
-        version: 1,
-        sha256Hash: PLAYLIST_SHA256
-      }
-    };
-
-    const url = `${PATHFINDER_URL}?operationName=${OPERATION_NAME}&variables=${encodeURIComponent(
-      JSON.stringify(variables)
-    )}&extensions=${encodeURIComponent(JSON.stringify(extensions))}`;
-
-    const res = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'app-platform': 'WebPlayer'
-      }
-    });
-
-    if (!res.ok) {
-      console.warn(`Pathfinder query failed at offset ${offset}: HTTP ${res.status}`);
-      break;
+async function fetchPathfinderPage(playlistId, token, offset, limit = 100) {
+  const variables = {
+    uri: `spotify:playlist:${playlistId}`,
+    offset,
+    limit,
+    enableWatchFeedEntrypoint: false
+  };
+  const extensions = {
+    persistedQuery: {
+      version: 1,
+      sha256Hash: PLAYLIST_SHA256
     }
+  };
 
-    const json = await res.json();
-    const plData = json?.data?.playlistV2;
-    if (typeof plData?.content?.totalCount === 'number') {
-      totalCount = plData.content.totalCount;
+  const url = `${PATHFINDER_URL}?operationName=${OPERATION_NAME}&variables=${encodeURIComponent(
+    JSON.stringify(variables)
+  )}&extensions=${encodeURIComponent(JSON.stringify(extensions))}`;
+
+  const res = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'app-platform': 'WebPlayer'
     }
+  });
 
-    const items = plData?.content?.items || [];
-    if (items.length === 0) break;
+  if (!res.ok) {
+    console.warn(`Pathfinder query failed at offset ${offset}: HTTP ${res.status}`);
+    return null;
+  }
 
-    for (const it of items) {
-      const t = it?.itemV2?.data;
-      if (!t || !t.name) continue;
+  return await res.json();
+}
 
-      const artists =
-        t.artists?.items?.map((a) => a.profile?.name).filter(Boolean).join(', ') || 'Desconocido';
+function parsePathfinderItem(it) {
+  const t = it?.itemV2?.data;
+  if (!t || !t.name) return null;
 
-      let year = null;
-      if (t.albumOfTrack?.date?.isoString) {
-        const parsedYear = parseInt(t.albumOfTrack.date.isoString.slice(0, 4), 10);
-        if (!isNaN(parsedYear) && parsedYear > 1900 && parsedYear <= 2030) {
-          year = parsedYear;
-        }
-      }
+  const artists =
+    t.artists?.items?.map((a) => a.profile?.name).filter(Boolean).join(', ') || 'Desconocido';
 
-      allTracks.push({
-        id: t.uri ? `sp-${t.uri.split(':').pop()}` : `sp-${Math.random()}`,
-        title: t.name,
-        artist: artists,
-        searchTerm: `${artists} ${t.name}`,
-        audioPreviewUrl: null,
-        year
-      });
+  let year = null;
+  const isoDate =
+    it?.itemV3?.data?.identityTrait?.contentHierarchyParent?.publishingMetadataTrait?.firstPublishedAt?.isoString ||
+    t.albumOfTrack?.date?.isoString;
+
+  if (isoDate) {
+    const parsedYear = parseInt(isoDate.slice(0, 4), 10);
+    if (!isNaN(parsedYear) && parsedYear > 1900 && parsedYear <= 2030) {
+      year = parsedYear;
     }
-
-    offset += limit;
   }
 
   return {
+    id: t.uri ? `sp-${t.uri.split(':').pop()}` : `sp-${Math.random()}`,
+    title: t.name,
+    artist: artists,
+    searchTerm: `${artists} ${t.name}`,
+    audioPreviewUrl: null,
+    year
+  };
+}
+
+async function fetchPathfinderTracks(playlistId, token) {
+  const limit = 100;
+  const maxTracks = 1500; // Margen para playlists de hasta 1500 canciones
+
+  // 1. Obtener primera página y total de canciones
+  const page0 = await fetchPathfinderPage(playlistId, token, 0, limit);
+  if (!page0) {
+    return { totalCount: 0, tracks: [] };
+  }
+
+  const plData = page0?.data?.playlistV2;
+  const totalCount = typeof plData?.content?.totalCount === 'number' ? plData.content.totalCount : 100;
+  const items0 = plData?.content?.items || [];
+  let allItems = [...items0];
+
+  // 2. Si hay más páginas, descargarlas en paralelo para responder en ~3 segundos
+  if (totalCount > limit) {
+    const offsets = [];
+    for (let off = limit; off < totalCount && off < maxTracks; off += limit) {
+      offsets.push(off);
+    }
+
+    try {
+      const remainingPages = await Promise.all(
+        offsets.map((off) => fetchPathfinderPage(playlistId, token, off, limit))
+      );
+      for (const p of remainingPages) {
+        const extraItems = p?.data?.playlistV2?.content?.items || [];
+        allItems = allItems.concat(extraItems);
+      }
+    } catch (e) {
+      console.warn('Error en paginación paralela de Pathfinder:', e);
+    }
+  }
+
+  const tracks = allItems.map(parsePathfinderItem).filter(Boolean);
+
+  return {
     totalCount,
-    tracks: allTracks
+    tracks
   };
 }
 
@@ -141,7 +166,8 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  const { url, id } = req.query;
+  const { url, id, token: queryToken } = req.query;
+  const bearerToken = req.headers?.authorization?.replace(/^Bearer\s+/i, '');
   const input = url || id || '';
   const match = String(input).match(/playlist[/:]([a-zA-Z0-9]+)/);
   const playlistId = match ? match[1] : input.trim();
@@ -153,11 +179,12 @@ export default async function handler(req, res) {
   try {
     // 1. Obtener la sesión y metadatos base
     const baseInfo = await getEmbedSessionAndFallback(playlistId);
+    const activeToken = baseInfo.token || queryToken || bearerToken;
 
-    // 2. Si hay token de sesión del Web Player, ejecutar paginación GraphQL de hasta 1500 canciones
-    if (baseInfo.token) {
+    // 2. Si hay token de sesión del Web Player o del usuario, ejecutar paginación GraphQL de hasta 1500 canciones
+    if (activeToken) {
       try {
-        const pathfinderResult = await fetchPathfinderTracks(playlistId, baseInfo.token);
+        const pathfinderResult = await fetchPathfinderTracks(playlistId, activeToken);
         if (pathfinderResult.tracks && pathfinderResult.tracks.length > 0) {
           return res.status(200).json({
             id: playlistId,

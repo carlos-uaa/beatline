@@ -7,7 +7,7 @@ const SYNCED_DEFAULTS_KEY = 'beatline_synced_defaults_v1';
 export const DEFAULT_MAIN_PLAYLIST = {
   id: 'mix-completo',
   title: 'Mix Completo 🎵',
-  description: 'Lista oficial basada en Spotify con más de 950 canciones: pop, reggaetón, clásicos, urbano y éxitos.',
+  description: 'Lista oficial basada en Spotify con 983 canciones: pop, reggaetón, clásicos, urbano y éxitos.',
   cover: 'https://mosaic.scdn.co/640/ab67616d00001e021df4a6df45ab77ef61e2e1ffab67616d00001e026f568261be22bda6f5b1aa49ab67616d00001e028cf8d07d28153e9f41caa54aab67616d00001e02bb674d8dfddfc19c2af3b9fe',
   tracks: MIX_COMPLETO_TRACKS,
   spotifyPlaylistId: '1WLeNGCJGpc5MDDzzscP0q',
@@ -73,17 +73,19 @@ export function getAllPlaylists() {
   const syncedDefaults = getSyncedDefaults();
   const defaults = DEFAULT_PLAYLISTS.map((pl) => {
     const cached = syncedDefaults[pl.id];
-    // Solo usamos el caché si tiene al menos la misma cantidad de canciones o más
-    // para evitar que un sync previo recortado a 100 sobreescriba las 954 canciones oficiales.
+    // Solo usamos el caché si tiene canciones con años verificados y al menos la misma cantidad de canciones
     if (cached && (cached.tracks?.length || 0) >= pl.tracks.length) {
-      return {
-        ...pl,
-        ...cached,
-        id: pl.id,
-        isOfficial: true,
-        spotifyPlaylistId: pl.spotifyPlaylistId,
-        spotifyUrl: pl.spotifyUrl
-      };
+      const cachedWithYear = (cached.tracks || []).filter((t) => t.year).length;
+      if (cachedWithYear >= pl.tracks.length * 0.9) {
+        return {
+          ...pl,
+          ...cached,
+          id: pl.id,
+          isOfficial: true,
+          spotifyPlaylistId: pl.spotifyPlaylistId,
+          spotifyUrl: pl.spotifyUrl
+        };
+      }
     }
     return pl;
   });

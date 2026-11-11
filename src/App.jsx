@@ -291,14 +291,63 @@ export default function App() {
     setHasSavedGame(false);
   };
 
-  // Barajar array (Fisher-Yates)
+  const RECENT_PLAYED_KEY = 'beatline_recent_played_v1';
+  const MAX_RECENT_HISTORY = 300;
+
+  const getRecentPlayedIds = () => {
+    try {
+      const raw = localStorage.getItem(RECENT_PLAYED_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const recordPlayedTrackId = (id) => {
+    if (!id) return;
+    try {
+      const current = getRecentPlayedIds().filter((x) => x !== id);
+      current.push(id);
+      if (current.length > MAX_RECENT_HISTORY) {
+        current.splice(0, current.length - MAX_RECENT_HISTORY);
+      }
+      localStorage.setItem(RECENT_PLAYED_KEY, JSON.stringify(current));
+    } catch {}
+  };
+
+  // Barajar array (Fisher-Yates Criptográfico de Alta Entropía)
   const shuffleDeck = (array) => {
     const arr = [...array];
     for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      let j;
+      if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+        const randBuf = new Uint32Array(1);
+        window.crypto.getRandomValues(randBuf);
+        j = Math.floor((randBuf[0] / (0xffffffff + 1)) * (i + 1));
+      } else {
+        j = Math.floor(Math.random() * (i + 1));
+      }
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
     return arr;
+  };
+
+  // Generador de Mazo Balanceado Anti-Repetición:
+  // Garantiza que canciones ya jugadas en partidas recientes se envíen al fondo del mazo,
+  // permitiendo que todas las canciones de la lista salgan de manera uniforme sin repetirse entre partidas.
+  const createBalancedDeck = (tracks) => {
+    if (!tracks || tracks.length === 0) return [];
+    const all = [...tracks];
+    const recentIds = new Set(getRecentPlayedIds());
+
+    const freshTracks = all.filter((t) => !recentIds.has(t.id));
+    const recentTracks = all.filter((t) => recentIds.has(t.id));
+
+    const shuffledFresh = shuffleDeck(freshTracks);
+    const shuffledRecent = shuffleDeck(recentTracks);
+
+    // Las canciones frescas se colocan al final del arreglo para ser extraídas primero con pop()
+    return [...shuffledRecent, ...shuffledFresh];
   };
 
   // Iniciar nueva partida
@@ -322,7 +371,7 @@ export default function App() {
     setEventProbability(prob);
     setTurnCount(1);
 
-    const shuffled = shuffleDeck(chosenPlaylist.tracks);
+    const shuffled = createBalancedDeck(chosenPlaylist.tracks);
 
     // Aleatorizar el orden de turnos de los jugadores al comenzar
     const randomizedPlayers = shuffleDeck(initialPlayers);
@@ -332,9 +381,10 @@ export default function App() {
 
     for (let p of randomizedPlayers) {
       if (currentDeck.length === 0) {
-        currentDeck = shuffleDeck(chosenPlaylist.tracks);
+        currentDeck = createBalancedDeck(chosenPlaylist.tracks);
       }
       const initialTrack = currentDeck.pop();
+      recordPlayedTrackId(initialTrack?.id);
       const enriched = await enrichTrack(initialTrack);
       preparedPlayers.push({
         ...p,
@@ -425,10 +475,11 @@ export default function App() {
     let deckToUse = [...remainingDeck];
     if (deckToUse.length === 0) {
       const currentPl = playlistObj || getPlaylistById(activePlaylistId);
-      deckToUse = shuffleDeck(currentPl.tracks);
+      deckToUse = createBalancedDeck(currentPl.tracks);
     }
 
     const nextTrack = deckToUse.pop();
+    recordPlayedTrackId(nextTrack?.id);
     setDeck(deckToUse);
     setActivePlayerIndex(nextPlayerIndex);
 
@@ -736,6 +787,7 @@ export default function App() {
       if (activeEvent?.rewardCards === 2 && deck.length > 0) {
         const rawExtra = deck.pop();
         if (rawExtra) {
+          recordPlayedTrackId(rawExtra.id);
           try {
             const enrichedExtra = await enrichTrack(rawExtra);
             const resolvedYear =
@@ -878,6 +930,7 @@ export default function App() {
       if (isCorrect && playerIdx !== effectivePlayerIndex) {
         if (deck.length > 0) {
           const rawTrack = deck.pop();
+          recordPlayedTrackId(rawTrack.id);
           try {
             trackGiven = await enrichTrack(rawTrack);
           } catch {
