@@ -332,16 +332,33 @@ export default function App() {
     return arr;
   };
 
-  // Generador de Mazo Balanceado Anti-Repetición:
-  // Garantiza que canciones ya jugadas en partidas recientes se envíen al fondo del mazo,
-  // permitiendo que todas las canciones de la lista salgan de manera uniforme sin repetirse entre partidas.
+  // Generador de Mazo Balanceado Anti-Repetición Adaptativo:
+  // - Se adapta dinámicamente al tamaño de la playlist (sea de 50, 200 o 1,000 canciones).
+  // - Garantiza que canciones ya jugadas en partidas recientes se envíen al fondo del mazo.
+  // - Cuando se agota el ciclo, las canciones más antiguas vuelven automáticamente a la rotación.
   const createBalancedDeck = (tracks) => {
     if (!tracks || tracks.length === 0) return [];
     const all = [...tracks];
-    const recentIds = new Set(getRecentPlayedIds());
 
-    const freshTracks = all.filter((t) => !recentIds.has(t.id));
-    const recentTracks = all.filter((t) => recentIds.has(t.id));
+    // Límite de memoria adaptativo: máximo el 60% de la playlist (ej. 120 para 200 canciones, 300 para 983)
+    const maxRecentForList = Math.min(MAX_RECENT_HISTORY, Math.floor(all.length * 0.6));
+    const recentList = getRecentPlayedIds();
+
+    // Solo tomamos en cuenta las canciones que pertenecen a esta playlist específica
+    const currentTrackIds = new Set(all.map((t) => t.id));
+    const relevantRecent = recentList.filter((id) => currentTrackIds.has(id));
+    const activeRecentIds = new Set(relevantRecent.slice(-maxRecentForList));
+
+    let freshTracks = all.filter((t) => !activeRecentIds.has(t.id));
+    let recentTracks = all.filter((t) => activeRecentIds.has(t.id));
+
+    // Si quedan pocas canciones frescas (menos de 15 o menos del 25%), liberamos la mitad más antigua
+    if (freshTracks.length < Math.min(15, Math.ceil(all.length * 0.25))) {
+      const halfCount = Math.floor(relevantRecent.length / 2);
+      const prunedRecentIds = new Set(relevantRecent.slice(halfCount));
+      freshTracks = all.filter((t) => !prunedRecentIds.has(t.id));
+      recentTracks = all.filter((t) => prunedRecentIds.has(t.id));
+    }
 
     const shuffledFresh = shuffleDeck(freshTracks);
     const shuffledRecent = shuffleDeck(recentTracks);
